@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "NodeNext",
+    "allowImportingTsExtensions": true,
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "strict": true,
+    "outDir": "../dist-server",
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules"]
+}
