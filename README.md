@@ -33,7 +33,7 @@ O sistema de frontend permite as seguintes operações:
   - A remoção é registrada no histórico.
 - **Notificações:** Feedback visual (toasts) para ações como adição, atualização e remoção de produtos.
 
-### Histórico de Alterações ([/history](src/views/HistoryView.vue))
+### Histórico de Alterações
 
 - **Visualizar Histórico:** Exibe um registro de todas as movimentações de estoque (entradas, saídas, adições e remoções de produtos).
 - **Detalhes da Alteração:** Para cada entrada no histórico, mostra:
