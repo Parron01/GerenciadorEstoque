@@ -18,7 +18,7 @@ const db = BetterSqlite3(dbPath)
 
 // Inicializar as tabelas caso não existam
 function initDatabase() {
-  // Tabela de produtos
+  // Tabela de produtos - mantendo a estrutura atual para compatibilidade com o front-end
   db.exec(`
     CREATE TABLE IF NOT EXISTS products (
       id TEXT PRIMARY KEY,
@@ -28,7 +28,7 @@ function initDatabase() {
     );
   `)
 
-  // Tabela de histórico
+  // Tabela de histórico - expandida para incluir mais detalhes
   db.exec(`
     CREATE TABLE IF NOT EXISTS history (
       id TEXT PRIMARY KEY,
@@ -36,6 +36,29 @@ function initDatabase() {
       changes TEXT NOT NULL
     );
   `)
+
+  // Inserir dados padrão se tabela estiver vazia
+  const count = db.prepare('SELECT COUNT(*) as count FROM products').get().count
+  if (count === 0) {
+    const defaultProducts = [
+      { id: '1', name: 'Alade', unit: 'L', quantity: 210 },
+      { id: '2', name: 'Curbix', unit: 'L', quantity: 71 },
+      { id: '3', name: 'Magnum', unit: 'kg', quantity: 110 },
+      { id: '4', name: 'Instivo', unit: 'L', quantity: 3 },
+      { id: '5', name: 'Kasumin', unit: 'L', quantity: 50 },
+      { id: '6', name: 'Priori', unit: 'L', quantity: 33 },
+    ]
+
+    const insert = db.prepare('INSERT INTO products (id, name, unit, quantity) VALUES (?, ?, ?, ?)')
+
+    db.transaction(() => {
+      defaultProducts.forEach((product) => {
+        insert.run(product.id, product.name, product.unit, product.quantity)
+      })
+    })()
+
+    console.log('Dados padrão inseridos no banco de dados')
+  }
 }
 
 initDatabase()

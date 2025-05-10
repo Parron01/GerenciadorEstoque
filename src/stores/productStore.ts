@@ -3,9 +3,31 @@ import { ref, watch } from 'vue'
 import { Product } from '@/models/product'
 
 const STORAGE_KEY = 'estoque_produtos'
+const API_URL = 'http://localhost:3000/api/products'
 
 export const useProductStore = defineStore('product', () => {
   const products = ref<Product[]>([])
+  const isLoading = ref(false)
+  const error = ref<string | null>(null)
+
+  async function fetchProducts() {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await fetch(API_URL)
+      if (!response.ok) throw new Error('Erro ao buscar produtos')
+
+      products.value = await response.json()
+      saveToStorage() // Manter backup local
+    } catch (err) {
+      console.error('Erro ao carregar produtos do servidor:', err)
+      error.value = 'Falha ao carregar produtos. Usando dados locais.'
+      loadFromStorage() // Fallback para dados locais
+    } finally {
+      isLoading.value = false
+    }
+  }
 
   function loadFromStorage() {
     const data = localStorage.getItem(STORAGE_KEY)
@@ -30,36 +52,94 @@ export const useProductStore = defineStore('product', () => {
     }
   }
 
-  function updateQuantity(id: string, delta: number) {
+  async function updateQuantity(id: string, delta: number) {
     const product = products.value.find((p) => p.id === id)
     if (product) {
-      product.quantity += delta
+      const newQuantity = product.quantity + delta
+
+      try {
+        const response = await fetch(`${API_URL}/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ quantity: newQuantity }),
+        })
+
+        if (!response.ok) throw new Error('Falha ao atualizar produto')
+
+        product.quantity = newQuantity
+        saveToStorage()
+      } catch (err) {
+        console.error('Erro ao atualizar produto no servidor:', err)
+        // Atualiza localmente mesmo se falhar no servidor
+        product.quantity = newQuantity
+        saveToStorage()
+      }
+    }
+  }
+
+  async function addProduct(product: Product) {
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(product),
+      })
+
+      if (!response.ok) throw new Error('Falha ao adicionar produto')
+
+      products.value.push(product)
+      saveToStorage()
+    } catch (err) {
+      console.error('Erro ao adicionar produto no servidor:', err)
+      // Adiciona localmente mesmo se falhar no servidor
+      products.value.push(product)
       saveToStorage()
     }
   }
 
-  function addProduct(product: Product) {
-    products.value.push(product)
-    saveToStorage()
-  }
+  async function removeProduct(id: string) {
+    try {
+      const response = await fetch(`${API_URL}/${id}`, {
+        method: 'DELETE',
+      })
 
-  function removeProduct(id: string) {
-    const index = products.value.findIndex((p) => p.id === id)
-    if (index !== -1) {
-      products.value.splice(index, 1)
-      saveToStorage()
+      if (!response.ok) throw new Error('Falha ao remover produto')
+
+      const index = products.value.findIndex((p) => p.id === id)
+      if (index !== -1) {
+        products.value.splice(index, 1)
+        saveToStorage()
+      }
+    } catch (err) {
+      console.error('Erro ao remover produto do servidor:', err)
+      // Remove localmente mesmo se falhar no servidor
+      const index = products.value.findIndex((p) => p.id === id)
+      if (index !== -1) {
+        products.value.splice(index, 1)
+        saveToStorage()
+      }
     }
   }
 
   watch(products, saveToStorage, { deep: true })
 
-  loadFromStorage()
-  initializeDefaults()
+  // Inicialização
+  fetchProducts().catch(() => {
+    loadFromStorage()
+    initializeDefaults()
+  })
 
   return {
     products,
+    isLoading,
+    error,
     updateQuantity,
     addProduct,
     removeProduct,
+    fetchProducts,
   }
 })

@@ -15,6 +15,10 @@ dotenv.config()
 const app = express()
 const PORT = process.env.PORT || 3000
 
+// Definir NODE_ENV como 'development' para facilitar o desenvolvimento
+process.env.NODE_ENV = process.env.NODE_ENV || 'development'
+console.log(`Servidor rodando em modo: ${process.env.NODE_ENV}`)
+
 // Configurar middleware
 app.use(cors())
 app.use(express.json())
@@ -39,7 +43,6 @@ app.listen(PORT, () => {
 })
 
 // Configurar backup semanal (todo domingo às 3:00)
-
 cron.schedule('0 3 * * 0', () => {
   console.log('Executando backup semanal...')
   createBackup()
