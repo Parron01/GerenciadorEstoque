@@ -1,159 +1,162 @@
 <script setup lang="ts">
-import { useProductStore } from '@/stores/productStore'
-import { useHistoryStore } from '@/stores/historyStore'
-import { ref } from 'vue'
-import { ProductChange, Product } from '@/models/product'
-import { v4 as uuidv4 } from 'uuid'
-import { useToast } from 'vue-toastification'
+import { useProductStore } from "@/stores/productStore";
+import { useHistoryStore } from "@/stores/historyStore";
+import { ref } from "vue";
+import type { ProductChange, Product } from "@/models/product";
+import { v4 as uuidv4 } from "uuid";
+import { useToast } from "vue-toastification";
 
-const productStore = useProductStore()
-const historyStore = useHistoryStore()
+const productStore = useProductStore();
+const historyStore = useHistoryStore();
 
 // Toast instance
-const toast = useToast()
+const toast = useToast();
 
 // Estado para controlar o modo de edição
-const isEditMode = ref(false)
+const isEditMode = ref(false);
 // Estado para controlar o modo de adição de produto
-const isAddProductMode = ref(false)
+const isAddProductMode = ref(false);
 
 // Estado para controlar o diálogo de confirmação de exclusão
-const showDeleteDialog = ref(false)
-const productToDelete = ref<Product | null>(null)
+const showDeleteDialog = ref(false);
+const productToDelete = ref<Product | null>(null);
 
 // Novo produto
-const newProduct = ref<Omit<Product, 'id'>>({
-  name: '',
-  unit: 'L',
+const newProduct = ref<Omit<Product, "id">>({
+  name: "",
+  unit: "L",
   quantity: 0,
-})
+});
 
 // Estado temporário para armazenar as quantidades durante a edição
-const tempQuantities = ref<Record<string, number>>({})
+const tempQuantities = ref<Record<string, number>>({});
 
 // Inicializa as quantidades temporárias com os valores atuais
 function initTempQuantities() {
-  const quantities: Record<string, number> = {}
+  const quantities: Record<string, number> = {};
   productStore.products.forEach((product) => {
-    quantities[product.id] = product.quantity
-  })
-  tempQuantities.value = quantities
+    quantities[product.id] = product.quantity;
+  });
+  tempQuantities.value = quantities;
 }
 
 // Ativa o modo de edição
 function enableEditMode() {
-  initTempQuantities()
-  isEditMode.value = true
+  initTempQuantities();
+  isEditMode.value = true;
 }
 
 // Altera a quantidade temporária de um produto
 function changeQuantity(id: string, delta: number) {
-  tempQuantities.value[id] = Math.max(0, (tempQuantities.value[id] || 0) + delta)
+  tempQuantities.value[id] = Math.max(
+    0,
+    (tempQuantities.value[id] || 0) + delta
+  );
 }
 
 // Atualiza diretamente a quantidade temporária
 function updateQuantity(id: string, value: number) {
-  tempQuantities.value[id] = Math.max(0, value)
+  tempQuantities.value[id] = Math.max(0, value);
 }
 
 // Confirma todas as alterações e cria entrada em lote no histórico
 function confirmUpdates() {
-  const changes: ProductChange[] = []
+  const changes: ProductChange[] = [];
 
   // Identifica mudanças e atualiza o estoque
   productStore.products.forEach((product) => {
-    const originalQuantity = product.quantity
-    const newQuantity = tempQuantities.value[product.id] || 0
+    const originalQuantity = product.quantity;
+    const newQuantity = tempQuantities.value[product.id] || 0;
 
     if (originalQuantity !== newQuantity) {
-      const delta = newQuantity - originalQuantity
+      const delta = newQuantity - originalQuantity;
 
       // Atualiza o estoque
-      productStore.updateQuantity(product.id, delta)
+      productStore.updateQuantity(product.id, delta);
 
       // Adiciona à lista de mudanças com informações de antes e depois
       changes.push({
         productId: product.id,
         productName: product.name, // Store the name directly
-        action: delta > 0 ? 'add' : 'remove',
+        action: delta > 0 ? "add" : "remove",
         quantityChanged: Math.abs(delta),
         quantityBefore: originalQuantity,
         quantityAfter: newQuantity,
-      })
+      });
     }
-  })
+  });
 
   // Se houver mudanças, adiciona uma única entrada em lote ao histórico
   if (changes.length > 0) {
-    historyStore.addBatchEntry(changes)
-    toast.success('Estoque atualizado com sucesso!', {
-      icon: 'check_circle',
-    })
+    historyStore.addBatchEntry(changes);
+    toast.success("Estoque atualizado com sucesso!", {
+      icon: "check_circle",
+    });
   }
 
   // Desativa o modo de edição
-  isEditMode.value = false
+  isEditMode.value = false;
 }
 
 // Cancela a edição sem salvar
 function cancelEdit() {
-  isEditMode.value = false
+  isEditMode.value = false;
 }
 
 // Abre o formulário para adicionar novo produto
 function openAddProductForm() {
   if (!isEditMode.value) {
-    newProduct.value = { name: '', unit: 'L', quantity: 0 }
-    isAddProductMode.value = true
+    newProduct.value = { name: "", unit: "L", quantity: 0 };
+    isAddProductMode.value = true;
   }
 }
 
 // Cancela a adição de produto
 function cancelAddProduct() {
-  isAddProductMode.value = false
+  isAddProductMode.value = false;
 }
 
 // Adiciona um novo produto
 function addProduct() {
   if (!newProduct.value.name || newProduct.value.quantity < 0) {
-    return
+    return;
   }
 
   const product: Product = {
     id: uuidv4(),
     ...newProduct.value,
-  }
+  };
 
-  productStore.addProduct(product)
+  productStore.addProduct(product);
 
   // Adiciona entrada no histórico para o novo produto
   historyStore.addBatchEntry([
     {
       productId: product.id,
       productName: product.name, // Store the name directly
-      action: 'add',
+      action: "add",
       quantityChanged: product.quantity,
       quantityBefore: 0,
       quantityAfter: product.quantity,
       isNewProduct: true, // Flag as a new product
     },
-  ])
+  ]);
 
   // Exibe toast de sucesso
   toast.success(`Produto "${product.name}" adicionado com sucesso!`, {
-    icon: 'add_circle',
-  })
+    icon: "add_circle",
+  });
 
-  isAddProductMode.value = false
+  isAddProductMode.value = false;
 }
 
 // Remove um produto
 function removeProduct(id: string) {
   if (!isEditMode.value) {
-    const product = productStore.products.find((p) => p.id === id)
+    const product = productStore.products.find((p) => p.id === id);
     if (product) {
-      productToDelete.value = product
-      showDeleteDialog.value = true
+      productToDelete.value = product;
+      showDeleteDialog.value = true;
     }
   }
 }
@@ -161,43 +164,46 @@ function removeProduct(id: string) {
 // Confirma a exclusão do produto
 function confirmDelete() {
   if (productToDelete.value) {
-    const productName = productToDelete.value.name
+    const productName = productToDelete.value.name;
 
     // Registra a remoção no histórico
     historyStore.addBatchEntry([
       {
         productId: productToDelete.value.id,
         productName: productToDelete.value.name,
-        action: 'remove',
+        action: "remove",
         quantityChanged: productToDelete.value.quantity,
         quantityBefore: productToDelete.value.quantity,
         quantityAfter: 0,
         isProductRemoval: true,
       },
-    ])
+    ]);
 
-    productStore.removeProduct(productToDelete.value.id)
+    productStore.removeProduct(productToDelete.value.id);
 
     // Exibe toast de remoção
     toast.info(`Produto "${productName}" removido do estoque`, {
-      icon: 'delete',
-    })
+      icon: "delete",
+    });
 
-    closeDeleteDialog()
+    closeDeleteDialog();
   }
 }
 
 // Fecha o diálogo de confirmação
 function closeDeleteDialog() {
-  showDeleteDialog.value = false
-  productToDelete.value = null
+  showDeleteDialog.value = false;
+  productToDelete.value = null;
 }
 </script>
 
 <template>
   <div>
     <!-- Botões de ação -->
-    <div class="flex flex-col sm:flex-row justify-end mb-4 gap-3" v-if="!isEditMode">
+    <div
+      class="flex flex-col sm:flex-row justify-end mb-4 gap-3"
+      v-if="!isEditMode"
+    >
       <button
         @click="openAddProductForm"
         class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition flex items-center justify-center"
@@ -241,7 +247,9 @@ function closeDeleteDialog() {
       <h2 class="text-xl font-bold mb-4">Adicionar Novo Produto</h2>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Nome do Produto</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Nome do Produto</label
+          >
           <input
             v-model="newProduct.name"
             type="text"
@@ -249,7 +257,9 @@ function closeDeleteDialog() {
           />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Unidade</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Unidade</label
+          >
           <select
             v-model="newProduct.unit"
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -259,7 +269,9 @@ function closeDeleteDialog() {
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Quantidade Inicial</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Quantidade Inicial</label
+          >
           <input
             v-model.number="newProduct.quantity"
             type="number"
@@ -391,7 +403,10 @@ function closeDeleteDialog() {
     </div>
 
     <!-- Diálogo de confirmação de exclusão -->
-    <div v-if="showDeleteDialog" class="fixed inset-0 flex items-center justify-center z-50">
+    <div
+      v-if="showDeleteDialog"
+      class="fixed inset-0 flex items-center justify-center z-50"
+    >
       <!-- Overlay de fundo escurecido -->
       <div
         class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
@@ -417,7 +432,9 @@ function closeDeleteDialog() {
             <span class="font-bold">{{ productToDelete?.name }}</span
             >?
           </p>
-          <p class="text-sm text-gray-500 mt-2">Esta ação não pode ser desfeita.</p>
+          <p class="text-sm text-gray-500 mt-2">
+            Esta ação não pode ser desfeita.
+          </p>
         </div>
 
         <!-- Botões de ação -->

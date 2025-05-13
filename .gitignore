@@ -7,16 +7,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-.DS_Store
-dist
-dist-ssr
-coverage
-*.local
-
-/cypress/videos/
-/cypress/screenshots/
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -28,3 +18,28 @@ coverage
 *.sw?
 
 *.tsbuildinfo
+
+# Dependencies
+frontend/node_modules/
+backend/node_modules/
+
+# Build outputs
+frontend/dist/
+frontend/dist-ssr/
+backend/dist/ # Ou o outDir configurado no backend/tsconfig.json
+
+# Coverage
+frontend/coverage/
+backend/coverage/
+
+# Misc
+*.local
+.DS_Store
+frontend/.DS_Store
+backend/.DS_Store
+
+# Database and Backups (se não versionados)
+backend/src/database/*.sqlite
+!backend/src/database/.gitkeep
+backend/src/backups/
+backend/.env
