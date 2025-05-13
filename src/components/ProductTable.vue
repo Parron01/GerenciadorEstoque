@@ -195,12 +195,12 @@ function closeDeleteDialog() {
 </script>
 
 <template>
-  <div class="overflow-x-auto">
+  <div>
     <!-- Botões de ação -->
-    <div class="flex justify-end mb-4 space-x-3" v-if="!isEditMode">
+    <div class="flex flex-col sm:flex-row justify-end mb-4 gap-3" v-if="!isEditMode">
       <button
         @click="openAddProductForm"
-        class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition flex items-center"
+        class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition flex items-center justify-center"
       >
         <span class="material-icons-outlined mr-1">add_circle</span>
         Novo Produto
@@ -208,17 +208,17 @@ function closeDeleteDialog() {
 
       <button
         @click="enableEditMode"
-        class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition flex items-center"
+        class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition flex items-center justify-center"
       >
         <span class="material-icons-outlined mr-1">edit</span>
         Atualizar Dados
       </button>
     </div>
 
-    <div class="flex justify-end mb-4 space-x-3" v-else>
+    <div class="flex flex-col sm:flex-row justify-end mb-4 gap-3" v-else>
       <button
         @click="cancelEdit"
-        class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition flex items-center"
+        class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition flex items-center justify-center"
       >
         <span class="material-icons-outlined mr-1">cancel</span>
         Cancelar
@@ -226,7 +226,7 @@ function closeDeleteDialog() {
 
       <button
         @click="confirmUpdates"
-        class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition flex items-center"
+        class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition flex items-center justify-center"
       >
         <span class="material-icons-outlined mr-1">check_circle</span>
         Confirmar Atualizações
@@ -284,73 +284,111 @@ function closeDeleteDialog() {
       </div>
     </div>
 
-    <table class="min-w-full bg-white rounded shadow">
-      <thead class="bg-indigo-600 text-white text-left">
-        <tr>
-          <th class="p-3">Produto</th>
-          <th class="p-3">Quantidade</th>
-          <th class="p-3">Unidade</th>
-          <th v-if="isEditMode" class="p-3">Ações</th>
-          <th v-if="!isEditMode" class="p-3 w-20">Remover</th>
-        </tr>
-      </thead>
+    <!-- Tabela de produtos responsiva -->
+    <div class="overflow-x-auto">
+      <table class="min-w-full bg-white rounded shadow">
+        <thead class="bg-indigo-600 text-white text-left">
+          <tr>
+            <th class="p-3">Produto</th>
+            <th class="p-3">Quantidade</th>
+            <th class="p-3">Unidade</th>
+            <th v-if="isEditMode" class="p-3">Ações</th>
+            <th v-if="!isEditMode" class="p-3 w-20">Remover</th>
+          </tr>
+        </thead>
 
-      <tbody>
-        <tr
-          v-for="p in productStore.products"
-          :key="p.id"
-          class="even:bg-gray-50 hover:bg-gray-100"
-        >
-          <td class="p-3 font-medium">{{ p.name }}</td>
-          <td class="p-3">
-            <div v-if="!isEditMode">{{ p.quantity }}</div>
-            <input
-              v-else
-              type="number"
-              min="0"
-              v-model.number="tempQuantities[p.id]"
-              @input="updateQuantity(p.id, tempQuantities[p.id])"
-              class="w-24 px-2 py-1 border border-gray-300 rounded text-center"
-            />
-          </td>
-          <td class="p-3">{{ p.unit }}</td>
-          <td v-if="isEditMode" class="p-3 space-x-1 flex">
-            <button
-              class="px-2 py-1 bg-red-500/90 hover:bg-red-600 text-white rounded text-xs"
-              @click="changeQuantity(p.id, -10)"
-            >
-              -10
-            </button>
-            <button
-              class="px-2 py-1 bg-red-500/90 hover:bg-red-600 text-white rounded text-xs"
-              @click="changeQuantity(p.id, -1)"
-            >
-              -1
-            </button>
-            <button
-              class="px-2 py-1 bg-green-500/90 hover:bg-green-600 text-white rounded text-xs"
-              @click="changeQuantity(p.id, +1)"
-            >
-              +1
-            </button>
-            <button
-              class="px-2 py-1 bg-green-500/90 hover:bg-green-600 text-white rounded text-xs"
-              @click="changeQuantity(p.id, +10)"
-            >
-              +10
-            </button>
-          </td>
-          <td v-if="!isEditMode" class="p-3">
-            <button
-              @click="removeProduct(p.id)"
-              class="w-full px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs flex items-center justify-center"
-            >
-              <span class="material-icons-outlined text-sm">delete</span>
-            </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+        <tbody>
+          <tr
+            v-for="p in productStore.products"
+            :key="p.id"
+            class="even:bg-gray-50 hover:bg-gray-100"
+          >
+            <td class="p-3 font-medium">{{ p.name }}</td>
+            <td class="p-3">
+              <div v-if="!isEditMode">{{ p.quantity }}</div>
+              <input
+                v-else
+                type="number"
+                min="0"
+                v-model.number="tempQuantities[p.id]"
+                @input="updateQuantity(p.id, tempQuantities[p.id])"
+                class="w-24 px-2 py-1 border border-gray-300 rounded text-center"
+              />
+            </td>
+            <td class="p-3">{{ p.unit }}</td>
+            <td v-if="isEditMode" class="p-3">
+              <!-- Para telas pequenas, layout em coluna -->
+              <div class="md:hidden flex flex-col space-y-2">
+                <div class="grid grid-cols-2 gap-1">
+                  <button
+                    class="px-2 py-1 bg-red-500/90 hover:bg-red-600 text-white rounded text-xs"
+                    @click="changeQuantity(p.id, -1)"
+                  >
+                    -1
+                  </button>
+                  <button
+                    class="px-2 py-1 bg-green-500/90 hover:bg-green-600 text-white rounded text-xs"
+                    @click="changeQuantity(p.id, +1)"
+                  >
+                    +1
+                  </button>
+                </div>
+                <div class="grid grid-cols-2 gap-1">
+                  <button
+                    class="px-2 py-1 bg-red-500/90 hover:bg-red-600 text-white rounded text-xs"
+                    @click="changeQuantity(p.id, -10)"
+                  >
+                    -10
+                  </button>
+                  <button
+                    class="px-2 py-1 bg-green-500/90 hover:bg-green-600 text-white rounded text-xs"
+                    @click="changeQuantity(p.id, +10)"
+                  >
+                    +10
+                  </button>
+                </div>
+              </div>
+
+              <!-- Para telas médias e grandes, layout em linha -->
+              <div class="hidden md:flex space-x-1">
+                <button
+                  class="px-2 py-1 bg-red-500/90 hover:bg-red-600 text-white rounded text-xs"
+                  @click="changeQuantity(p.id, -10)"
+                >
+                  -10
+                </button>
+                <button
+                  class="px-2 py-1 bg-red-500/90 hover:bg-red-600 text-white rounded text-xs"
+                  @click="changeQuantity(p.id, -1)"
+                >
+                  -1
+                </button>
+                <button
+                  class="px-2 py-1 bg-green-500/90 hover:bg-green-600 text-white rounded text-xs"
+                  @click="changeQuantity(p.id, +1)"
+                >
+                  +1
+                </button>
+                <button
+                  class="px-2 py-1 bg-green-500/90 hover:bg-green-600 text-white rounded text-xs"
+                  @click="changeQuantity(p.id, +10)"
+                >
+                  +10
+                </button>
+              </div>
+            </td>
+            <td v-if="!isEditMode" class="p-3">
+              <button
+                @click="removeProduct(p.id)"
+                class="w-full px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs flex items-center justify-center"
+              >
+                <span class="material-icons-outlined text-sm">delete</span>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <!-- Diálogo de confirmação de exclusão -->
     <div v-if="showDeleteDialog" class="fixed inset-0 flex items-center justify-center z-50">

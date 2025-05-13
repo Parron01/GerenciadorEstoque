@@ -51,11 +51,11 @@ function toggleShowPassword() {
   <div
     class="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4"
   >
-    <div class="w-full max-w-md p-8 space-y-8 bg-white rounded-xl shadow-lg">
+    <div class="w-full max-w-md p-6 md:p-8 space-y-6 md:space-y-8 bg-white rounded-xl shadow-lg">
       <!-- Logo e título -->
       <div class="text-center">
-        <h1 class="text-3xl font-bold text-indigo-700 flex items-center justify-center">
-          <span class="text-4xl mr-2">📦</span> Estoque Simples
+        <h1 class="text-2xl md:text-3xl font-bold text-indigo-700 flex items-center justify-center">
+          <span class="text-3xl md:text-4xl mr-2">📦</span> Estoque Simples
         </h1>
         <p class="mt-2 text-gray-600">Faça login para gerenciar seu estoque</p>
       </div>
@@ -63,7 +63,7 @@ function toggleShowPassword() {
       <!-- Aviso de erro de conexão -->
       <div
         v-if="isConnectionError"
-        class="p-4 bg-yellow-100 text-yellow-800 rounded border border-yellow-200 flex items-start"
+        class="p-3 md:p-4 bg-yellow-100 text-yellow-800 rounded border border-yellow-200 flex items-start"
       >
         <span class="material-icons-outlined mr-2 text-yellow-600">warning</span>
         <div>
@@ -76,7 +76,7 @@ function toggleShowPassword() {
       </div>
 
       <!-- Formulário -->
-      <form class="mt-8 space-y-6" @submit.prevent="handleLogin">
+      <form class="mt-6 md:mt-8 space-y-5 md:space-y-6" @submit.prevent="handleLogin">
         <!-- Mensagem de erro -->
         <div
           v-if="authStore.authError"
@@ -132,7 +132,7 @@ function toggleShowPassword() {
           <button
             type="submit"
             :disabled="isConnectionError || authStore.isLoading"
-            class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed text-white rounded-md transition flex items-center justify-center"
+            class="w-full py-2.5 md:py-3 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed text-white rounded-md transition flex items-center justify-center"
           >
             <span v-if="authStore.isLoading" class="material-icons-outlined animate-spin mr-2"
               >autorenew</span
@@ -143,7 +143,7 @@ function toggleShowPassword() {
       </form>
 
       <!-- Divider -->
-      <div class="my-6 flex items-center">
+      <div class="my-5 md:my-6 flex items-center">
         <div class="flex-grow border-t border-gray-300"></div>
         <span class="flex-shrink px-4 text-sm text-gray-500">ou</span>
         <div class="flex-grow border-t border-gray-300"></div>
@@ -154,7 +154,7 @@ function toggleShowPassword() {
         <button
           type="button"
           @click="handleLocalMode"
-          class="w-full py-2 px-4 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md transition flex items-center justify-center"
+          class="w-full py-2.5 px-4 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md transition flex items-center justify-center"
         >
           <span class="material-icons-outlined mr-2">offline_bolt</span>
           Continuar sem login (modo local)
@@ -162,7 +162,7 @@ function toggleShowPassword() {
       </div>
 
       <!-- Nota de informação -->
-      <div class="mt-6 text-center text-xs text-gray-500">
+      <div class="mt-5 text-center text-xs text-gray-500">
         <p>Modo local: Os dados são armazenados apenas no seu navegador.</p>
         <p class="mt-1">Modo autenticado: Os dados são armazenados no servidor.</p>
       </div>

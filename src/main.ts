@@ -7,25 +7,29 @@ import App from './App.vue'
 import router from './router'
 
 // Import Toast
-import Toast from 'vue-toastification'
+import Toast, { type PluginOptions } from 'vue-toastification'
 import 'vue-toastification/dist/index.css'
 
-// Toast options
-const toastOptions = {
+// Toast options com configurações melhoradas e design moderno
+const toastOptions: PluginOptions = {
   position: 'top-right',
-  timeout: 3000,
+  timeout: 4000,
   closeOnClick: true,
   pauseOnFocusLoss: true,
   pauseOnHover: true,
   draggable: true,
   draggablePercent: 0.6,
-  showCloseButtonOnHover: false,
-  hideProgressBar: true,
+  showCloseButtonOnHover: true,
+  hideProgressBar: false,
   closeButton: 'button',
-  icon: true,
+  icon: false, // Desativamos os ícones padrão para usar nossos ícones personalizados via CSS
   rtl: false,
-  transition: 'Vue-Toastification__bounce',
+  transition: 'Vue-Toastification__fade',
   maxToasts: 3,
+  // Classes personalizadas para melhorar a estética
+  toastClassName: 'custom-toast-style',
+  bodyClassName: 'custom-toast-body',
+  containerClassName: 'custom-toast-container',
 }
 
 // Create app
