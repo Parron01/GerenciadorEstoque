@@ -2,6 +2,11 @@ import BetterSqlite3 from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import bcrypt from 'bcrypt'
+import dotenv from 'dotenv'
+
+// Carregar variáveis de ambiente
+dotenv.config()
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -18,6 +23,16 @@ const db = BetterSqlite3(dbPath)
 
 // Inicializar as tabelas caso não existam
 function initDatabase() {
+  // Tabela de usuários
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+  `)
+
   // Tabela de produtos - mantendo a estrutura atual para compatibilidade com o front-end
   db.exec(`
     CREATE TABLE IF NOT EXISTS products (
@@ -28,7 +43,7 @@ function initDatabase() {
     );
   `)
 
-  // Tabela de histórico - expandida para incluir mais detalhes
+  // Tabela de histórico
   db.exec(`
     CREATE TABLE IF NOT EXISTS history (
       id TEXT PRIMARY KEY,
@@ -37,7 +52,37 @@ function initDatabase() {
     );
   `)
 
-  // Inserir dados padrão se tabela estiver vazia
+  // Verificar se já existe um usuário admin
+  const adminUser = db
+    .prepare('SELECT * FROM users WHERE username = ?')
+    .get(process.env.ADMIN_USERNAME)
+
+  if (!adminUser) {
+    // Criar usuário admin com base no .env
+    const adminUsername = process.env.ADMIN_USERNAME
+    const adminPassword = process.env.ADMIN_PASSWORD
+
+    if (adminUsername && adminPassword) {
+      try {
+        // Hash da senha
+        const saltRounds = 10
+        const passwordHash = bcrypt.hashSync(adminPassword, saltRounds)
+
+        // Inserir usuário admin
+        db.prepare('INSERT INTO users (username, password) VALUES (?, ?)').run(
+          adminUsername,
+          passwordHash,
+        )
+        console.log(`Usuário admin criado com sucesso: ${adminUsername}`)
+      } catch (error) {
+        console.error('Erro ao criar usuário admin:', error)
+      }
+    } else {
+      console.error('ADMIN_USERNAME ou ADMIN_PASSWORD não definidos no arquivo .env')
+    }
+  }
+
+  // Inserir dados padrão se tabela de produtos estiver vazia
   const count = db.prepare('SELECT COUNT(*) as count FROM products').get().count
   if (count === 0) {
     const defaultProducts = [
@@ -49,18 +94,30 @@ function initDatabase() {
       { id: '6', name: 'Priori', unit: 'L', quantity: 33 },
     ]
 
-    const insert = db.prepare('INSERT INTO products (id, name, unit, quantity) VALUES (?, ?, ?, ?)')
+    try {
+      const insert = db.prepare(
+        'INSERT INTO products (id, name, unit, quantity) VALUES (?, ?, ?, ?)',
+      )
 
-    db.transaction(() => {
-      defaultProducts.forEach((product) => {
-        insert.run(product.id, product.name, product.unit, product.quantity)
-      })
-    })()
+      db.transaction(() => {
+        defaultProducts.forEach((product) => {
+          insert.run(product.id, product.name, product.unit, product.quantity)
+        })
+      })()
 
-    console.log('Dados padrão inseridos no banco de dados')
+      console.log('Dados padrão inseridos no banco de dados')
+    } catch (error) {
+      console.error('Erro ao inserir produtos padrão:', error)
+    }
   }
 }
 
-initDatabase()
+// Inicializar banco de dados com tratamento de erro
+try {
+  initDatabase()
+  console.log('Banco de dados inicializado com sucesso!')
+} catch (error) {
+  console.error('Erro ao inicializar banco de dados:', error)
+}
 
 export default db

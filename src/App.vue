@@ -1,5 +1,24 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
+import { useAuthStore } from '@/stores/authStore'
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+
+const authStore = useAuthStore()
+const router = useRouter()
+
+const isLoggedIn = computed(() => authStore.isAuthenticated || authStore.isLocalMode)
+const userDisplayName = computed(() => {
+  if (authStore.isAuthenticated) {
+    return authStore.user || 'Usuário'
+  }
+  return authStore.isLocalMode ? 'Modo Local' : ''
+})
+
+const handleLogout = () => {
+  authStore.logout()
+  router.push('/login')
+}
 </script>
 
 <template>
@@ -7,6 +26,7 @@ import { RouterLink, RouterView } from 'vue-router'
   <div class="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-indigo-50 text-gray-800">
     <!-- Top Bar -->
     <header
+      v-if="isLoggedIn"
       class="flex items-center justify-between px-6 md:px-12 h-16 shadow-lg bg-white sticky top-0 z-50"
     >
       <h1
@@ -16,7 +36,7 @@ import { RouterLink, RouterView } from 'vue-router'
       </h1>
 
       <!-- Navegação -->
-      <nav class="space-x-6 font-medium">
+      <nav class="space-x-6 font-medium flex items-center">
         <RouterLink
           to="/"
           class="relative py-2 px-1 hover:text-indigo-600 transition-colors"
@@ -32,6 +52,25 @@ import { RouterLink, RouterView } from 'vue-router'
         >
           Histórico
         </RouterLink>
+
+        <div class="border-l border-gray-300 h-6 mx-4"></div>
+
+        <!-- User info and logout -->
+        <div class="flex items-center">
+          <span class="text-sm text-gray-600 mr-3">
+            <span class="material-icons-outlined text-sm mr-1 align-text-bottom">
+              {{ authStore.isAuthenticated ? 'person' : 'cloud_off' }}
+            </span>
+            {{ userDisplayName }}
+          </span>
+          <button
+            @click="handleLogout"
+            class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded text-sm flex items-center"
+          >
+            <span class="material-icons-outlined text-sm mr-1">logout</span>
+            Sair
+          </button>
+        </div>
       </nav>
     </header>
 

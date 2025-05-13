@@ -43,7 +43,15 @@ app.listen(PORT, () => {
 })
 
 // Configurar backup semanal (todo domingo às 3:00)
-cron.schedule('0 3 * * 0', () => {
-  console.log('Executando backup semanal...')
-  createBackup()
-})
+// Usando syntax mais simples
+try {
+  if (cron.validate('0 3 * * 0')) {
+    cron.schedule('0 3 * * 0', () => {
+      console.log('Executando backup semanal...')
+      createBackup()
+    })
+    console.log('Agendamento de backup configurado')
+  }
+} catch (error) {
+  console.error('Erro ao configurar agendamento de backup:', error)
+}

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
-import jwt, { VerifyErrors } from 'jsonwebtoken'
+import jwt from 'jsonwebtoken'
 
 // Estender o tipo Request para incluir o usuário
 declare global {
@@ -25,17 +25,12 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
     return
   }
 
-  jwt.verify(
-    token,
-    process.env.JWT_SECRET || 'fallback_secret',
-    (err: VerifyErrors | null, user: any) => {
-      if (err) {
-        res.status(403).json({ message: 'Token inválido ou expirado' })
-        return
-      }
-
-      req.user = user
-      next()
-    },
-  )
+  try {
+    const jwtSecret = process.env.JWT_SECRET || 'fallback_secret'
+    const user = jwt.verify(token, jwtSecret)
+    req.user = user
+    next()
+  } catch (err) {
+    return res.status(403).json({ message: 'Token inválido ou expirado' })
+  }
 }
