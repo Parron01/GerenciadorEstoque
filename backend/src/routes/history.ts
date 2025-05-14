@@ -1,11 +1,14 @@
-import express from 'express'
-import { authenticateToken } from '../middleware/auth.ts'
-import { getAllHistory, createHistoryEntry } from '../controllers/historyController.ts'
+import express from "express";
+import { authenticateToken } from "../middleware/auth.js";
+import {
+  getAllHistory,
+  createHistoryEntry,
+} from "../controllers/historyController.js";
 
-const router = express.Router()
+const router = express.Router();
 
 // Rotas protegidas
-router.get('/', authenticateToken, getAllHistory)
-router.post('/', authenticateToken, createHistoryEntry)
+router.get("/", authenticateToken, getAllHistory);
+router.post("/", authenticateToken, createHistoryEntry);
 
-export default router
+export default router;
