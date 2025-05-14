@@ -43,17 +43,17 @@ export const useAuthStore = defineStore("auth", () => {
         throw new Error(data.message || "Falha na autenticação");
       }
 
-      // Armazenar token e usuário
+      // Corrigido: extrair username do objeto user retornado pela API
       token.value = data.token;
-      user.value = data.username;
+      user.value = data.user.username; // <-- Modificação aqui
 
       // Salvar em localStorage
       localStorage.setItem("auth_token", data.token);
-      localStorage.setItem("auth_user", data.username);
-      localStorage.removeItem("local_mode");
+      localStorage.setItem("auth_user", data.user.username); // <-- Modificação aqui
 
       // Toast de sucesso
-      toast.success(`Bem-vindo, ${data.username}!`, {
+      toast.success(`Bem-vindo, ${data.user.username}!`, {
+        // <-- Modificação aqui
         icon: "check_circle",
       });
 
