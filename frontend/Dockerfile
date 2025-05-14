@@ -17,3 +17,21 @@ RUN npm run build
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
+
+# Development Dockerfile for Frontend
+FROM node:slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm install
+
+# Copy the application code
+COPY . .
+
+# Expose Vite's default port
+EXPOSE 5173
+
+# Command to run the development server
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

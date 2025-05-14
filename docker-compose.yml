@@ -1,0 +1,53 @@
+# docker-compose.yml completo
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15
+    env_file:
+      - ./backendGo/.env
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+
+  api:
+    build:
+      context: ./backendGo
+      dockerfile: Dockerfile
+    env_file:
+      - ./backendGo/.env
+    environment:
+      POSTGRES_HOST: db
+      CORS_ALLOWED_ORIGINS: "http://localhost:5173,http://frontend:5173"
+    depends_on:
+      - db
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      - VITE_API_BASE_URL=http://localhost:3000
+    ports:
+      - "5173:5173" # Changed from 80:80 to 5173:5173
+    volumes:
+      - ./frontend:/app # For development hot-reloading
+      - /app/node_modules # Prevent overriding node_modules
+    depends_on:
+      - api
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  db_data:
