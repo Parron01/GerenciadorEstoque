@@ -1,37 +1,25 @@
-# Dockerfile do Frontend - Vue.js (Vite)
-# Stage 1: Build
+# --- Stage 1 : build ---
 FROM node:slim AS build
 WORKDIR /app
-
-# Instalando todas as dependências (prod + dev) apenas para o build
 COPY package*.json ./
-RUN npm install
-
-# Copiando o código da aplicação
+RUN npm ci
 COPY . .
+# Definindo a variável VITE_API_BASE_URL diretamente para o Vite
+ENV VITE_API_BASE_URL="https://estoque.parron01.com"
 
-# Executando o build (typescript + vite)
-RUN npm run build
+RUN npm run build   # gera /app/dist
 
-# Stage 2: Imagem final simplificada (Apenas arquivos necessários)
+# --- Stage 2 : runtime ---
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
+# SPA: redireciona tudo p/ index.html
+# nginx.conf direto no Dockerfile
+RUN printf "server {\n\
+  listen 80;\n\
+  server_name _;\n\
+  root /usr/share/nginx/html;\n\
+  index index.html;\n\
+  location / { try_files \$uri /index.html; }\n\
+}\n" > /etc/nginx/conf.d/default.conf
 EXPOSE 80
-
-# Development Dockerfile for Frontend
-FROM node:slim
-
-WORKDIR /app
-
-# Install dependencies
-COPY package*.json ./
-RUN npm install
-
-# Copy the application code
-COPY . .
-
-# Expose Vite's default port
-EXPOSE 5173
-
-# Command to run the development server
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["nginx", "-g", "daemon off;"]

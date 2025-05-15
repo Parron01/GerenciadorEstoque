@@ -16,7 +16,7 @@ services:
   api:
     build:
       context: ./backendGo
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     env_file:
       - ./backendGo/.env
     environment:
@@ -32,7 +32,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     environment:
       - VITE_API_BASE_URL=http://localhost:3000
     ports:
