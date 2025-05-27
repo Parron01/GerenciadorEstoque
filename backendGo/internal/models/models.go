@@ -19,14 +19,27 @@ type Product struct {
     Name     string  `json:"name"`
     Unit     string  `json:"unit"`
     Quantity float64 `json:"quantity"`
+    Lotes    []Lote  `json:"lotes,omitempty"` // Added: Lotes associated with the product
+}
+
+// Lote represents a batch of a product
+type Lote struct {
+    ID            string    `json:"id"`                       // UUID
+    ProductID     string    `json:"product_id"`               // FK to Product.ID
+    Quantity      float64   `json:"quantity" binding:"required,gt=0"`
+    DataValidade  string    `json:"data_validade" binding:"required"` // YYYY-MM-DD
+    CreatedAt     time.Time `json:"created_at"`
+    UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // History represents a history entry in the database
 // It corresponds to the ProductHistory interface in Node.js
 type History struct {
-    ID      string          `json:"id"`
-    Date    string          `json:"date"`
-    Changes json.RawMessage `json:"changes"` // Store as JSON string in DB
+    ID         string          `json:"id"`          // UUID
+    Date       string          `json:"date"`        // Kept as string to match existing, ideally time.Time
+    EntityType string          `json:"entity_type"` // "product" or "lote"
+    EntityID   string          `json:"entity_id"`   // ID of the product or lote
+    Changes    json.RawMessage `json:"changes"`     // JSON string detailing changes
 }
 
 // LoginRequest represents a login request
@@ -50,4 +63,17 @@ type ProductChange struct {
     QuantityAfter   float64 `json:"quantityAfter"`
     IsNewProduct    bool    `json:"isNewProduct,omitempty"`
     IsProductRemoval bool   `json:"isProductRemoval,omitempty"`
+}
+
+// LoteChangeDetail describes changes made to a Lote for history records
+type LoteChangeDetail struct {
+	LoteID          string    `json:"loteId"`
+	ProductID       string    `json:"productId"`
+	Action          string    `json:"action"` // e.g., "created", "updated", "deleted"
+	QuantityChanged *float64  `json:"quantityChanged,omitempty"`
+	QuantityBefore  *float64  `json:"quantityBefore,omitempty"`
+	QuantityAfter   *float64  `json:"quantityAfter,omitempty"`
+	DataValidade    *string   `json:"dataValidade,omitempty"`    // Current value after change
+	DataValidadeOld *string   `json:"dataValidadeOld,omitempty"` // Previous value if updated
+	DataValidadeNew *string   `json:"dataValidadeNew,omitempty"` // New value if updated
 }

@@ -8,6 +8,7 @@ Este é o backend para o sistema de Gerenciamento de Estoque, desenvolvido em Go
 - **PostgreSQL:** Banco de dados relacional utilizado para armazenamento de dados.
 - **Gin:** Framework web para Go, utilizado para criar a API RESTful.
 - **JWT:** Para autenticação e autorização baseada em tokens.
+- **golang-migrate/migrate:** Para gerenciamento e aplicação de migrações de banco de dados.
 - **Cron:** Para agendamento de tarefas automáticas (backups semanais).
 - **Docker:** Para containerização da aplicação.
 
@@ -24,21 +25,34 @@ backendGo
 │   ├── controllers
 │   │   ├── auth.go          # Controlador de autenticação
 │   │   ├── history.go       # Controlador de histórico
-│   │   └── product.go       # Controlador de produtos
+│   │   ├── product.go       # Controlador de produtos
+│   │   └── lote_controller.go # Controlador de lotes de produtos
 │   ├── database
 │   │   └── database.go      # Conexão com o banco de dados PostgreSQL
 │   ├── middleware
 │   │   └── auth.go          # Middleware de autenticação
 │   ├── models
-│   │   └── models.go        # Modelos de dados
+│   │   └── models.go        # Modelos de dados (incluindo Lote)
+│   ├── repository
+│   │   ├── product_repository.go
+│   │   ├── lote_repository.go
+│   │   └── history_repository.go
 │   ├── routes
 │   │   └── routes.go        # Configuração das rotas
+│   ├── service
+│   │   ├── product_service.go
+│   │   ├── lote_service.go
+│   │   └── history_service.go
 │   └── utils
 │       └── backup.go        # Funções utilitárias para backup
 ├── backups                  # Diretório onde os backups são armazenados
+├── migrations               # Arquivos de migração SQL
+│   ├── 001_create_product_lots.sql
+│   └── 002_update_history_table.sql
 ├── go.mod                   # Definição do módulo Go e dependências
 ├── go.sum                   # Checksums das dependências
-├── Dockerfile               # Instruções para construir a imagem Docker
+├── Dockerfile               # Instruções para construir a imagem Docker de produção
+├── Dockerfile.dev           # Instruções para construir a imagem Docker de desenvolvimento
 ├── docker-compose.yml       # Configuração para orquestração de containers
 ├── .env                     # Variáveis de ambiente
 └── README.md                # Documentação do projeto
@@ -50,7 +64,8 @@ backendGo
 
 - Go 1.23 ou superior
 - PostgreSQL
-- Utilitário pg_dump (para backups)
+- Docker & Docker Compose (para execução via Docker)
+- Utilitário pg_dump (para backups, geralmente incluído com PostgreSQL)
 
 ### Variáveis de Ambiente
 
@@ -69,15 +84,20 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 ```
 
+### Migrações de Banco de Dados
+
+As migrações de banco de dados estão localizadas na pasta `migrations`. Elas são aplicadas automaticamente quando a aplicação backend é iniciada através do `docker-compose up` ou ao executar o `main.go` diretamente. A ferramenta `golang-migrate/migrate` é utilizada para este propósito.
+
 ### Executando com Docker (Recomendado)
 
 O modo mais simples de executar o projeto é utilizando Docker Compose:
 
 ```sh
-docker-compose up
+docker-compose up --build
 ```
 
-Isso iniciará tanto o banco de dados PostgreSQL quanto a API.
+O `--build` é recomendado na primeira vez ou após alterações nos Dockerfiles ou dependências.
+Isso iniciará o banco de dados PostgreSQL, aplicará as migrações automaticamente e, em seguida, iniciará a API.
 
 ### Executando Localmente
 
@@ -86,7 +106,7 @@ Isso iniciará tanto o banco de dados PostgreSQL quanto a API.
    ```sh
    go mod download
    ```
-3. Execute o servidor:
+3. Execute o servidor (as migrações serão aplicadas automaticamente):
    ```sh
    go run cmd/server/main.go
    ```
@@ -101,15 +121,19 @@ O servidor estará disponível em `http://localhost:3000`.
 - Usuário admin criado automaticamente na inicialização
 - Verificação de tokens para rotas protegidas
 
-### Gerenciamento de Produtos
+### Gerenciamento de Produtos e Lotes
 
-- CRUD completo para produtos (criar, ler, atualizar, deletar)
-- Produtos incluem ID, nome, unidade (L ou kg) e quantidade
+- CRUD completo para produtos (criar, ler, atualizar, deletar).
+- Produtos incluem ID, nome, unidade (L ou kg) e quantidade.
+- Cada produto pode ser composto por múltiplos lotes.
+- Cada lote possui ID, ID do produto, quantidade, data de validade.
+- A quantidade total de um produto é automaticamente calculada como a soma das quantidades de seus lotes ativos (via gatilho no banco de dados).
 
 ### Histórico de Alterações
 
-- Registro de todas as modificações no estoque
-- Armazenamento de alterações em formato JSON para flexibilidade
+- Registro de todas as modificações em produtos e lotes.
+- Armazenamento de alterações em formato JSON para flexibilidade.
+- `EntityType` e `EntityID` nos registros de histórico indicam a qual entidade (produto ou lote) a alteração se refere.
 
 ### Sistema de Backup Automático
 
@@ -127,16 +151,25 @@ O servidor estará disponível em `http://localhost:3000`.
 
 ### Produtos
 
-- `GET /api/products`: Lista todos os produtos.
-- `GET /api/products/:id`: Obtém um produto específico pelo ID.
+- `GET /api/products`: Lista todos os produtos (incluindo seus lotes).
+- `GET /api/products/:id`: Obtém um produto específico pelo ID (incluindo seus lotes).
 - `POST /api/products`: Cria um novo produto (requer autenticação).
 - `PUT /api/products/:id`: Atualiza um produto existente (requer autenticação).
-- `DELETE /api/products/:id`: Remove um produto (requer autenticação).
+- `DELETE /api/products/:id`: Remove um produto (e seus lotes associados) (requer autenticação).
+
+### Lotes de Produtos
+
+- `POST /api/products/:product_id/lotes`: Cria um novo lote para um produto específico (requer autenticação).
+- `GET /api/products/:product_id/lotes`: Lista todos os lotes de um produto específico (requer autenticação).
+- `PUT /api/lotes/:lote_id`: Atualiza um lote específico (requer autenticação).
+- `DELETE /api/lotes/:lote_id`: Remove um lote específico (requer autenticação).
 
 ### Histórico
 
 - `GET /api/history`: Lista todos os registros de histórico de alterações (requer autenticação).
-- `POST /api/history`: Adiciona um novo registro ao histórico (requer autenticação).
+  - Suporta query params `limit` e `offset` para paginação.
+- `POST /api/history`: Adiciona um novo registro ao histórico (requer autenticação, geralmente usado internamente pelos serviços).
+- `GET /api/history/:entity_type/:entity_id`: Lista registros de histórico para uma entidade específica (e.g., `/api/history/product/123` ou `/api/history/lote/abc`) (requer autenticação).
 
 ## CORS
 

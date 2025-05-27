@@ -57,7 +57,7 @@ func InitDB(cfg *config.Config) error {
 // initTables creates tables if they don't exist
 func initTables() error {
     // Create users table
-    _, err := DB.Exec(`
+	_, err := DB.Exec(`
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
             username VARCHAR(100) UNIQUE NOT NULL,
@@ -65,12 +65,12 @@ func initTables() error {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `)
-    if err != nil {
-        return err
-    }
+	if err != nil {
+		return err
+	}
 
     // Create products table
-    _, err = DB.Exec(`
+	_, err = DB.Exec(`
         CREATE TABLE IF NOT EXISTS products (
             id VARCHAR(100) PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
@@ -78,24 +78,58 @@ func initTables() error {
             quantity NUMERIC NOT NULL DEFAULT 0
         )
     `)
-    if err != nil {
-        return err
-    }
+	if err != nil {
+		return err
+	}
 
-    // Create history table
-    _, err = DB.Exec(`
+    // Create history table (updated structure)
+    // Note: Migrations (001_create_product_lots.sql, 002_update_history_table.sql) should handle
+    // the creation and alteration of tables in a production environment.
+    // This CREATE TABLE IF NOT EXISTS is for initial setup or development.
+	_, err = DB.Exec(`
         CREATE TABLE IF NOT EXISTS history (
             id VARCHAR(100) PRIMARY KEY,
-            date VARCHAR(100) NOT NULL,
+            date VARCHAR(100) NOT NULL, -- Ideally TIMESTAMP WITH TIME ZONE
+            entity_type VARCHAR(50),    -- Added
+            entity_id VARCHAR(100),   -- Added
             changes JSONB NOT NULL
         )
     `)
-    if err != nil {
-        return err
-    }
+	if err != nil {
+		return err
+	}
 
-    log.Println("Database tables created/verified successfully")
-    return nil
+    // product_lots table is created by migration 001_create_product_lots.sql
+    // Ensure uuid-ossp extension is available if not running migrations that create it.
+    // _, err = DB.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`)
+    // if err != nil {
+    //    log.Printf("Warning: could not create uuid-ossp extension, may be handled by migration: %v", err)
+    // }
+    // The product_lots table itself should be created by its migration script.
+    // If you need it here for a fresh dev setup without running migrations:
+    /*
+    _, err = DB.Exec(`
+		CREATE TABLE IF NOT EXISTS product_lots (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			product_id VARCHAR(100) NOT NULL,
+			quantity NUMERIC NOT NULL CHECK (quantity >= 0),
+			data_validade DATE NOT NULL,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			CONSTRAINT fk_product
+				FOREIGN KEY(product_id)
+				REFERENCES products(id)
+				ON DELETE CASCADE
+		);
+	`)
+    if err != nil {
+        return fmt.Errorf("error creating product_lots table: %w", err)
+    }
+    */
+
+
+	log.Println("Database tables created/verified successfully (core tables)")
+	return nil
 }
 
 // createAdminUser creates an admin user if it doesn't exist
