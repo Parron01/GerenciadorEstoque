@@ -44,14 +44,14 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config) {
 		products := api.Group("/products")
 		{
 			products.GET("", productController.GetAll)
-			products.GET("/:id", productController.GetByID)
+			products.GET("/:product_id", productController.GetByID) // Changed :id to :product_id
 			products.POST("", middleware.AuthMiddleware(cfg), productController.Create)
-			products.PUT("/:id", middleware.AuthMiddleware(cfg), productController.Update)
-			products.DELETE("/:id", middleware.AuthMiddleware(cfg), productController.Delete)
+			products.PUT("/:product_id", middleware.AuthMiddleware(cfg), productController.Update) // Changed :id to :product_id
+			products.DELETE("/:product_id", middleware.AuthMiddleware(cfg), productController.Delete) // Changed :id to :product_id
 
             // Lote routes (nested under products for creation and listing)
 			products.POST("/:product_id/lotes", middleware.AuthMiddleware(cfg), loteController.CreateLote)
-			products.GET("/:product_id/lotes", middleware.AuthMiddleware(cfg), loteController.GetLotesForProduct) // Auth optional for GET
+			products.GET("/:product_id/lotes", middleware.AuthMiddleware(cfg), loteController.GetLotesForProduct)
 		}
 
         // Standalone Lote routes (for updating/deleting specific lotes by their own ID)

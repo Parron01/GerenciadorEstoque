@@ -22,6 +22,14 @@ func NewProductController(repo repository.ProductRepository, historySvc service.
 }
 
 // GetAll returns all products
+// @Summary Get all products
+// @Description Retrieves a list of all products in the system.
+// @Tags products
+// @Produce json
+// @Success 200 {array} models.Product
+// @Failure 500 {object} gin.H{"error": "message"}
+// @Router /api/products [get]
+// @Security BearerAuth
 func (pc *ProductController) GetAll(c *gin.Context) {
 	products, err := pc.repo.GetAll()
 	if err != nil {
@@ -35,10 +43,20 @@ func (pc *ProductController) GetAll(c *gin.Context) {
 }
 
 // GetByID returns a specific product by ID
+// @Summary Get a product by ID
+// @Description Retrieves a product by its ID, including its lotes.
+// @Tags products
+// @Produce json
+// @Param product_id path string true "Product ID"
+// @Success 200 {object} models.Product
+// @Failure 404 {object} gin.H{"error": "message"} "Product not found"
+// @Failure 500 {object} gin.H{"error": "message"}
+// @Router /api/products/{product_id} [get]
+// @Security BearerAuth
 func (pc *ProductController) GetByID(c *gin.Context) {
-	id := c.Param("id")
+	productID := c.Param("product_id") // Changed from "id"
 
-	product, err := pc.repo.GetByID(id)
+	product, err := pc.repo.GetByID(productID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch product by ID: " + err.Error()})
 		return
@@ -52,6 +70,17 @@ func (pc *ProductController) GetByID(c *gin.Context) {
 }
 
 // Create adds a new product
+// @Summary Create a new product
+// @Description Adds a new product to the system.
+// @Tags products
+// @Accept json
+// @Produce json
+// @Param product body models.Product true "Product data (ID is optional, will be generated if empty; Quantity is initial, will be managed by lotes if lotes are added)"
+// @Success 201 {object} models.Product
+// @Failure 400 {object} gin.H{"error": "message"}
+// @Failure 500 {object} gin.H{"error": "message"}
+// @Router /api/products [post]
+// @Security BearerAuth
 func (pc *ProductController) Create(c *gin.Context) {
 	var product models.Product
 	if err := c.ShouldBindJSON(&product); err != nil {
@@ -77,6 +106,7 @@ func (pc *ProductController) Create(c *gin.Context) {
 		IsNewProduct:   true,
 	}
 	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, product.ID, changeDetail); err != nil {
+		// Log or handle history recording error, but don't fail the main operation
 	}
 
 	createdProduct, fetchErr := pc.repo.GetByID(product.ID)
@@ -88,17 +118,30 @@ func (pc *ProductController) Create(c *gin.Context) {
 }
 
 // Update modifies an existing product
+// @Summary Update an existing product
+// @Description Updates the details of an existing product (name, unit). Quantity is managed by lotes.
+// @Tags products
+// @Accept json
+// @Produce json
+// @Param product_id path string true "Product ID"
+// @Param product body models.Product true "Product data to update (name, unit)"
+// @Success 200 {object} models.Product
+// @Failure 400 {object} gin.H{"error": "message"}
+// @Failure 404 {object} gin.H{"error": "message"} "Product not found"
+// @Failure 500 {object} gin.H{"error": "message"}
+// @Router /api/products/{product_id} [put]
+// @Security BearerAuth
 func (pc *ProductController) Update(c *gin.Context) {
-	id := c.Param("id")
+	productID := c.Param("product_id") // Changed from "id"
 	var productUpdates models.Product
 	if err := c.ShouldBindJSON(&productUpdates); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product data: " + err.Error()})
 		return
 	}
 
-	productUpdates.ID = id
+	productUpdates.ID = productID
 
-	existingProduct, err := pc.repo.GetByID(id)
+	existingProduct, err := pc.repo.GetByID(productID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch existing product: " + err.Error()})
 		return
@@ -119,15 +162,17 @@ func (pc *ProductController) Update(c *gin.Context) {
 
 	if originalName != productUpdates.Name || originalUnit != productUpdates.Unit {
 		changeDetail := models.ProductChange{
-			ProductID:     id,
+			ProductID:     productID,
 			ProductName:   productUpdates.Name,
 			Action:        "updated",
+			// Add more details if needed, e.g., old name/unit
 		}
-		if err := pc.historySvc.RecordChange(service.EntityTypeProduct, id, changeDetail); err != nil {
+		if err := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail); err != nil {
+			// Log or handle history recording error
 		}
 	}
 
-	updatedProduct, fetchErr := pc.repo.GetByID(id)
+	updatedProduct, fetchErr := pc.repo.GetByID(productID)
     if fetchErr != nil {
         c.JSON(http.StatusOK, productUpdates) // Fallback
         return
@@ -136,10 +181,20 @@ func (pc *ProductController) Update(c *gin.Context) {
 }
 
 // Delete removes a product
+// @Summary Delete a product
+// @Description Removes a product and its associated lotes from the system.
+// @Tags products
+// @Produce json
+// @Param product_id path string true "Product ID"
+// @Success 200 {object} gin.H{"message": "Product deleted successfully"}
+// @Failure 404 {object} gin.H{"error": "message"} "Product not found"
+// @Failure 500 {object} gin.H{"error": "message"}
+// @Router /api/products/{product_id} [delete]
+// @Security BearerAuth
 func (pc *ProductController) Delete(c *gin.Context) {
-	id := c.Param("id")
+	productID := c.Param("product_id") // Changed from "id"
 
-	existingProduct, err := pc.repo.GetByID(id)
+	existingProduct, err := pc.repo.GetByID(productID)
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check product existence: " + err.Error()})
         return
@@ -149,20 +204,21 @@ func (pc *ProductController) Delete(c *gin.Context) {
         return
     }
 
-	err = pc.repo.Delete(id)
+	err = pc.repo.Delete(productID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete product: " + err.Error()})
 		return
 	}
 
 	changeDetail := models.ProductChange{
-		ProductID:        id,
+		ProductID:        productID,
 		ProductName:      existingProduct.Name,
 		Action:           "deleted",
-		QuantityBefore:   existingProduct.Quantity,
+		QuantityBefore:   existingProduct.Quantity, // Quantity before deletion (sum of its lotes)
 		IsProductRemoval: true,
 	}
-	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, id, changeDetail); err != nil {
+	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail); err != nil {
+		// Log or handle history recording error
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Product deleted successfully"})
