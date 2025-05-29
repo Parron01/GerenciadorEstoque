@@ -16,10 +16,12 @@ const (
 )
 
 type HistoryService interface {
-	RecordChange(entityType, entityID string, changeDetails interface{}) error
+	RecordChange(entityType, entityID string, changeDetails interface{}, batchID ...string) error
 	GetHistory(limit, offset int) ([]models.History, error)
 	GetHistoryForEntity(entityType, entityID string) ([]models.History, error)
 	CreateRawHistoryEntry(entry models.History) error
+	CreateBatch(entries []models.History) (string, error) // New: Create batch of history entries
+	GetByBatchID(batchID string) ([]models.History, error) // New: Get entries by batch ID
 }
 
 type historyService struct {
@@ -30,7 +32,8 @@ func NewHistoryService(repo repository.HistoryRepository) HistoryService {
 	return &historyService{repo: repo}
 }
 
-func (s *historyService) RecordChange(entityType, entityID string, changeDetails interface{}) error {
+// RecordChange now accepts an optional batchID
+func (s *historyService) RecordChange(entityType, entityID string, changeDetails interface{}, batchID ...string) error {
 	changesJSON, err := json.Marshal(changeDetails)
 	if err != nil {
 		return fmt.Errorf("failed to marshal change details to JSON: %w", err)
@@ -42,6 +45,11 @@ func (s *historyService) RecordChange(entityType, entityID string, changeDetails
 		EntityType: entityType,
 		EntityID:   entityID,
 		Changes:    changesJSON,
+	}
+
+	// Use provided batchID if available, otherwise entry.ID will be used as default
+	if len(batchID) > 0 && batchID[0] != "" {
+		entry.BatchID = batchID[0]
 	}
 
 	return s.repo.Create(&entry)
@@ -69,13 +77,41 @@ func (s *historyService) CreateRawHistoryEntry(entry models.History) error {
     if entry.Date == "" {
         entry.Date = time.Now().Format(time.RFC3339)
     }
-    // Ensure EntityType and EntityID are provided if this method is used
-    if entry.EntityType == "" || entry.EntityID == "" {
-        // This might be relaxed if the `changes` blob contains enough info
-        // and a pre-processing step populates these fields.
-        // For now, require them for raw entries.
-        // However, the original controller allowed creating history without these.
-        // Let's align with the original controller's flexibility for now.
-    }
     return s.repo.Create(&entry)
+}
+
+// New method to create a batch of history entries with a common batchID
+func (s *historyService) CreateBatch(entries []models.History) (string, error) {
+    if len(entries) == 0 {
+        return "", fmt.Errorf("no history entries provided for batch creation")
+    }
+
+    // Generate a common batch ID for all entries
+    batchID := uuid.NewString()
+    now := time.Now().Format(time.RFC3339)
+
+    // Set consistent values for all entries
+    for i := range entries {
+        if entries[i].ID == "" {
+            entries[i].ID = uuid.NewString()
+        }
+        if entries[i].Date == "" {
+            entries[i].Date = now
+        }
+        entries[i].BatchID = batchID // Use the common batchID
+    }
+
+    if err := s.repo.CreateBatch(entries); err != nil {
+        return "", fmt.Errorf("failed to create history batch: %w", err)
+    }
+
+    return batchID, nil
+}
+
+// New method to retrieve history entries by batchID
+func (s *historyService) GetByBatchID(batchID string) ([]models.History, error) {
+    if batchID == "" {
+        return nil, fmt.Errorf("batch ID is required")
+    }
+    return s.repo.GetByBatchID(batchID)
 }

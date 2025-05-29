@@ -66,11 +66,13 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config) {
         // History routes
 		history := api.Group("/history")
 		{
-			history.GET("", middleware.AuthMiddleware(cfg), historyController.GetAll) // Auth for GET all
-			// POST to history is kept as is, assuming client might send some history records.
-			// Internal history is recorded by services (ProductService, LoteService).
+			history.GET("", middleware.AuthMiddleware(cfg), historyController.GetAll) // Now supports ?batch_id=
 			history.POST("", middleware.AuthMiddleware(cfg), historyController.Create)
-            history.GET("/:entity_type/:entity_id", middleware.AuthMiddleware(cfg), historyController.GetHistoryForEntity) // New
+			history.GET("/:entity_type/:entity_id", middleware.AuthMiddleware(cfg), historyController.GetHistoryForEntity)
+			
+			// New batch endpoints
+			history.POST("/batch", middleware.AuthMiddleware(cfg), historyController.CreateBatch)
+			history.GET("/batch/:batch_id", middleware.AuthMiddleware(cfg), historyController.GetByBatch)
 		}
 	}
 }

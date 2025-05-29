@@ -40,6 +40,7 @@ type History struct {
     EntityType string          `json:"entity_type"` // "product" or "lote"
     EntityID   string          `json:"entity_id"`   // ID of the product or lote
     Changes    json.RawMessage `json:"changes"`     // JSON string detailing changes
+    BatchID    string          `json:"batch_id"`    // UUID to group related history entries
 }
 
 // LoginRequest represents a login request

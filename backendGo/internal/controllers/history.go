@@ -23,6 +23,7 @@ func NewHistoryController(service service.HistoryService) *HistoryController {
 func (hc *HistoryController) GetAll(c *gin.Context) {
 	limitQuery := c.DefaultQuery("limit", "20")
 	offsetQuery := c.DefaultQuery("offset", "0")
+	batchID := c.Query("batch_id") // Added batch_id query parameter
 
 	limit, err := strconv.Atoi(limitQuery)
 	if err != nil || limit <= 0 {
@@ -33,9 +34,18 @@ func (hc *HistoryController) GetAll(c *gin.Context) {
 		offset = 0
 	}
 
-	historyEntries, err := hc.service.GetHistory(limit, offset)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch history: " + err.Error()})
+	var historyEntries []models.History
+	var fetchErr error
+
+	// If batch_id is provided, get by batch_id instead
+	if batchID != "" {
+		historyEntries, fetchErr = hc.service.GetByBatchID(batchID)
+	} else {
+		historyEntries, fetchErr = hc.service.GetHistory(limit, offset)
+	}
+
+	if fetchErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch history: " + fetchErr.Error()})
 		return
 	}
 	if historyEntries == nil {
@@ -53,14 +63,6 @@ func (hc *HistoryController) Create(c *gin.Context) {
 		return
 	}
 
-	if historyEntry.EntityType == "" || historyEntry.EntityID == "" {
-		// This check depends on how strictly you want to enforce these fields for client-submitted history.
-		// For now, we allow it, aligning with the previous direct DB insert that didn't require them.
-		// However, for better data quality, requiring them is advisable.
-		// c.JSON(http.StatusBadRequest, gin.H{"error": "EntityType and EntityID are required for history entries"})
-		// return
-	}
-
 	err := hc.service.CreateRawHistoryEntry(historyEntry)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create history entry: " + err.Error()})
@@ -69,7 +71,8 @@ func (hc *HistoryController) Create(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Histórico adicionado com sucesso",
-		"id":      historyEntry.ID, // ID is now set by service/repo if not provided
+		"id":      historyEntry.ID,
+		"batch_id": historyEntry.BatchID,
 	})
 }
 
@@ -102,5 +105,74 @@ func (hc *HistoryController) GetHistoryForEntity(c *gin.Context) {
 	if historyEntries == nil {
 		historyEntries = []models.History{}
 	}
+	c.JSON(http.StatusOK, historyEntries)
+}
+
+// New batch operations
+
+// CreateBatch handles the creation of multiple history entries in a single batch
+// @Summary Create multiple history entries in one batch
+// @Description Creates multiple history entries with a shared batch ID
+// @Tags history
+// @Accept json
+// @Produce json
+// @Param entries body []models.History true "Array of history entries (BatchID will be set automatically)"
+// @Success 201 {object} gin.H{"message": "string", "batch_id": "string", "count": int}
+// @Failure 400 {object} gin.H{"error": "string"}
+// @Failure 500 {object} gin.H{"error": "string"}
+// @Router /api/history/batch [post]
+// @Security BearerAuth
+func (hc *HistoryController) CreateBatch(c *gin.Context) {
+	var historyEntries []models.History
+	if err := c.ShouldBindJSON(&historyEntries); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid batch history data: " + err.Error()})
+		return
+	}
+
+	if len(historyEntries) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Empty batch - no history entries provided"})
+		return
+	}
+
+	batchID, err := hc.service.CreateBatch(historyEntries)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create history batch: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "History batch created successfully",
+		"batch_id": batchID,
+		"count": len(historyEntries),
+	})
+}
+
+// GetByBatch retrieves all history entries for a specific batch ID
+// @Summary Get history entries by batch ID
+// @Description Retrieves all history entries belonging to a specific batch
+// @Tags history
+// @Produce json
+// @Param batch_id path string true "Batch ID"
+// @Success 200 {array} models.History
+// @Failure 400 {object} gin.H{"error": "string"}
+// @Failure 500 {object} gin.H{"error": "string"}
+// @Router /api/history/batch/{batch_id} [get]
+// @Security BearerAuth
+func (hc *HistoryController) GetByBatch(c *gin.Context) {
+	batchID := c.Param("batch_id")
+	if batchID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Batch ID is required"})
+		return
+	}
+
+	historyEntries, err := hc.service.GetByBatchID(batchID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch history by batch ID: " + err.Error()})
+		return
+	}
+	if historyEntries == nil {
+		historyEntries = []models.History{}
+	}
+
 	c.JSON(http.StatusOK, historyEntries)
 }

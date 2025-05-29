@@ -7,6 +7,7 @@ import (
 
 	"github.com/Parron01/GerenciadorEstoque/backendGo/internal/models"
 	"github.com/Parron01/GerenciadorEstoque/backendGo/internal/repository"
+	"github.com/google/uuid"
 )
 
 type LoteService interface {
@@ -64,7 +65,10 @@ func (s *loteService) CreateLote(productID string, loteReq models.Lote) (*models
 		return nil, fmt.Errorf("failed to create lote in repository: %w", err)
 	}
 
-	// Record history
+	// Generate a batchID for this operation
+	batchID := uuid.NewString()
+
+	// Record history with batchID
 	changeDetail := models.LoteChangeDetail{
 		LoteID:       newLote.ID,
 		ProductID:    productID,
@@ -72,7 +76,7 @@ func (s *loteService) CreateLote(productID string, loteReq models.Lote) (*models
 		QuantityAfter: &newLote.Quantity,
 		DataValidade: &newLote.DataValidade,
 	}
-	if err := s.historySvc.RecordChange(EntityTypeLote, newLote.ID, changeDetail); err != nil {
+	if err := s.historySvc.RecordChange(EntityTypeLote, newLote.ID, changeDetail, batchID); err != nil {
 		// Log error, but don't fail the primary operation for history recording failure
 		fmt.Printf("Warning: failed to record history for lote creation %s: %v\n", newLote.ID, err)
 	}
@@ -130,7 +134,10 @@ func (s *loteService) UpdateLote(loteID string, loteReq models.Lote) (*models.Lo
 		return nil, fmt.Errorf("failed to update lote in repository: %w", err)
 	}
 
-	// Record history
+	// Generate a batchID for this operation
+	batchID := uuid.NewString()
+
+	// Record history with batchID
 	changeDetail := models.LoteChangeDetail{
 		LoteID:          loteID,
 		ProductID:       existingLote.ProductID,
@@ -144,7 +151,7 @@ func (s *loteService) UpdateLote(loteID string, loteReq models.Lote) (*models.Lo
 		qtyChanged := existingLote.Quantity - originalQuantity
 		changeDetail.QuantityChanged = &qtyChanged
 	}
-	if err := s.historySvc.RecordChange(EntityTypeLote, loteID, changeDetail); err != nil {
+	if err := s.historySvc.RecordChange(EntityTypeLote, loteID, changeDetail, batchID); err != nil {
 		fmt.Printf("Warning: failed to record history for lote update %s: %v\n", loteID, err)
 	}
 
@@ -174,7 +181,10 @@ func (s *loteService) DeleteLote(loteID string) error {
 		return fmt.Errorf("failed to delete lote in repository: %w", err)
 	}
 
-	// Record history
+	// Generate a batchID for this operation
+	batchID := uuid.NewString()
+
+	// Record history with batchID
 	changeDetail := models.LoteChangeDetail{
 		LoteID:         loteID,
 		ProductID:      existingLote.ProductID,
@@ -182,7 +192,7 @@ func (s *loteService) DeleteLote(loteID string) error {
 		QuantityBefore: &existingLote.Quantity,
 		DataValidade:   &existingLote.DataValidade,
 	}
-	if err := s.historySvc.RecordChange(EntityTypeLote, loteID, changeDetail); err != nil {
+	if err := s.historySvc.RecordChange(EntityTypeLote, loteID, changeDetail, batchID); err != nil {
 		fmt.Printf("Warning: failed to record history for lote deletion %s: %v\n", loteID, err)
 	}
 
