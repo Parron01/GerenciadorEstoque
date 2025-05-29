@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useProductStore } from "@/stores/productStore";
 import { useHistoryStore } from "@/stores/historyStore";
-import { ref, computed, watch } from "vue";
+import { ref, computed } from "vue";
 import type { ProductChange, Product } from "@/models/product";
 import type { Lote, LotePayload } from "@/models/lote";
 import { v4 as uuidv4 } from "uuid";
@@ -9,6 +9,8 @@ import { useToast } from "vue-toastification";
 import AddLoteModal from "./AddLoteModal.vue";
 import EditLoteModal from "./EditLoteModal.vue";
 import { useAuthStore } from "@/stores/authStore";
+import ProductRow from "./product-table/ProductRow.vue";
+import LoteDropdown from "./product-table/LoteDropdown.vue";
 
 const productStore = useProductStore();
 const historyStore = useHistoryStore();
@@ -586,11 +588,6 @@ function closeDeleteLoteDialog() {
 }
 
 const products = computed(() => productStore.products);
-
-function formatDate(dateString?: string) {
-  if (!dateString) return "N/A";
-  return new Date(dateString).toLocaleDateString();
-}
 </script>
 
 <template>
@@ -711,319 +708,34 @@ function formatDate(dateString?: string) {
           </tr>
         </thead>
         <tbody>
-          <template v-for="p in products" :key="p.id">
-            <!-- Product Row with enhanced styling -->
+          <template v-for="product in products" :key="product.id">
+            <!-- Product Row Component -->
+            <ProductRow
+              :product="product"
+              :is-edit-mode="isEditMode"
+              :expanded-products="expandedProducts"
+              :temp-product-details="tempProductDetails"
+              :temp-quantities="tempQuantities"
+              @toggle-product-lotes="toggleProductLotes"
+              @quantity-changed="changeProductQuantity"
+              @quantity-updated="updateProductQuantityDirectly"
+              @update-product-base-quantity="updateProductBaseQuantity"
+              @request-delete="requestDeleteProduct"
+            />
+
+            <!-- Lotes Dropdown Component (expanded row) -->
             <tr
-              class="border-b hover:bg-gray-50 transition-colors"
-              :class="{ 'bg-indigo-50': expandedProducts[p.id] }"
-            >
-              <!-- Enhanced Toggle Lotes button -->
-              <td class="p-4 text-center">
-                <button
-                  @click="toggleProductLotes(p.id)"
-                  class="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 hover:bg-indigo-100"
-                  :class="{
-                    'bg-indigo-100 shadow-md': expandedProducts[p.id],
-                    'hover:shadow': !expandedProducts[p.id],
-                  }"
-                  title="Clique para expandir/recolher informações de lotes"
-                >
-                  <span
-                    class="material-icons-outlined text-lg text-indigo-600 transition-transform duration-300"
-                    :class="{ 'rotate-90': expandedProducts[p.id] }"
-                  >
-                    chevron_right
-                  </span>
-                </button>
-              </td>
-
-              <!-- Product Name with enhanced styling -->
-              <td class="p-4">
-                <input
-                  v-if="isEditMode"
-                  type="text"
-                  v-model="tempProductDetails[p.id].name"
-                  class="input-field-enhanced w-full"
-                />
-                <span v-else class="font-medium text-gray-700">{{
-                  p.name
-                }}</span>
-              </td>
-
-              <!-- Product Unit with enhanced styling -->
-              <td class="p-4">
-                <select
-                  v-if="isEditMode"
-                  v-model="tempProductDetails[p.id].unit"
-                  class="input-field-enhanced w-full"
-                >
-                  <option value="L">L</option>
-                  <option value="kg">kg</option>
-                </select>
-                <span
-                  v-else
-                  class="px-2 py-1 bg-gray-100 rounded text-sm font-medium text-gray-700"
-                  >{{ p.unit }}</span
-                >
-              </td>
-
-              <!-- Product Quantity with enhanced styling -->
-              <td class="p-4">
-                <div v-if="isEditMode && (!p.lotes || p.lotes.length === 0)">
-                  <input
-                    type="number"
-                    min="0"
-                    v-model.number="tempQuantities[p.id]"
-                    @input="
-                      updateProductQuantityDirectly(p.id, tempQuantities[p.id])
-                    "
-                    class="w-28 input-field-enhanced text-center"
-                  />
-                  <div class="flex space-x-1 mt-2">
-                    <button
-                      @click="changeProductQuantity(p.id, -10)"
-                      class="btn-qty-enhanced"
-                    >
-                      -10
-                    </button>
-                    <button
-                      @click="changeProductQuantity(p.id, -1)"
-                      class="btn-qty-enhanced"
-                    >
-                      -1
-                    </button>
-                    <button
-                      @click="changeProductQuantity(p.id, 1)"
-                      class="btn-qty-enhanced bg-emerald-500/90 hover:bg-emerald-600"
-                    >
-                      +1
-                    </button>
-                    <button
-                      @click="changeProductQuantity(p.id, 10)"
-                      class="btn-qty-enhanced bg-emerald-500/90 hover:bg-emerald-600"
-                    >
-                      +10
-                    </button>
-                  </div>
-                </div>
-                <div
-                  v-else-if="isEditMode && p.lotes && p.lotes.length > 0"
-                  class="flex flex-col"
-                >
-                  <span class="font-bold text-lg text-indigo-700">{{
-                    getProductDisplayQuantity(p)
-                  }}</span>
-
-                  <!-- NEW: Base quantity editor for products with lotes -->
-                  <div class="mt-2 pt-2 border-t border-dashed border-gray-200">
-                    <div class="text-xs text-gray-500 mb-1">
-                      <span class="font-medium text-indigo-600"
-                        >Qtd. Base do Produto:</span
-                      >
-                    </div>
-                    <div class="flex items-center space-x-2">
-                      <input
-                        type="number"
-                        min="0"
-                        :value="p.quantity"
-                        @input="
-                          updateProductBaseQuantity(
-                            p.id,
-                            parseFloat(
-                              ($event.target as HTMLInputElement).value
-                            )
-                          )
-                        "
-                        class="w-20 py-1 px-2 text-sm border border-indigo-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                      />
-                      <span class="text-xs text-indigo-600 font-medium">{{
-                        p.unit
-                      }}</span>
-                    </div>
-                  </div>
-                </div>
-                <div v-else class="font-bold text-lg text-indigo-700">
-                  {{ getProductDisplayQuantity(p) }}
-                </div>
-
-                <div
-                  v-if="
-                    p.lotes &&
-                    p.lotes.length > 0 &&
-                    p.quantity !== getProductDisplayQuantity(p) &&
-                    !isEditMode
-                  "
-                  class="mt-1 p-1 bg-yellow-50 border border-yellow-300 rounded text-xs text-yellow-800 flex items-center"
-                >
-                  <span
-                    class="material-icons-outlined text-xs mr-1 text-yellow-600"
-                    >warning</span
-                  >
-                  <span>
-                    Total lotes: {{ getProductDisplayQuantity(p) }} {{ p.unit
-                    }}<br />
-                    Base: {{ p.quantity }} {{ p.unit }}
-                    <span v-if="!isEditMode" class="text-xs italic">
-                      (Ative edição para corrigir)
-                    </span>
-                  </span>
-                </div>
-              </td>
-
-              <!-- Product Actions with enhanced styling -->
-              <td class="p-4">
-                <button
-                  v-if="!isEditMode"
-                  @click="requestDeleteProduct(p)"
-                  class="btn-danger-enhanced flex items-center justify-center"
-                  title="Excluir produto"
-                >
-                  <span class="material-icons-outlined text-sm">delete</span>
-                  <span class="ml-1">Excluir</span>
-                </button>
-                <div v-else class="flex items-center">
-                  <span
-                    v-if="!expandedProducts[p.id]"
-                    class="text-sm text-indigo-600 font-medium flex items-center"
-                    title="Clique na seta à esquerda para gerenciar lotes"
-                  >
-                    <span
-                      class="material-icons-outlined text-sm mr-1 animate-pulse"
-                      >arrow_back</span
-                    >
-                    Clique na seta para ver lotes
-                  </span>
-                  <span
-                    v-else
-                    class="text-sm text-indigo-600 font-medium flex items-center"
-                  >
-                    <span
-                      class="material-icons-outlined text-sm mr-1 text-indigo-500"
-                      >inventory</span
-                    >
-                    Gerenciando lotes...
-                  </span>
-                </div>
-              </td>
-            </tr>
-
-            <!-- Lotes Accordion (expanded row) with enhanced styling -->
-            <tr
-              v-if="expandedProducts[p.id]"
+              v-if="expandedProducts[product.id]"
               class="bg-gradient-to-r from-indigo-50/80 to-indigo-50/50"
             >
               <td></td>
-              <td colspan="4" class="py-3 px-4">
-                <div
-                  class="rounded-lg border border-indigo-300 shadow-sm overflow-hidden"
-                >
-                  <!-- Lotes Header with enhanced styling -->
-                  <div
-                    class="bg-gradient-to-r from-indigo-500 to-indigo-600 p-3 flex justify-between items-center"
-                  >
-                    <h3
-                      class="font-medium text-white text-sm flex items-center"
-                    >
-                      <span class="material-icons-outlined mr-1.5"
-                        >inventory</span
-                      >
-                      Lotes de <span class="font-bold ml-1">{{ p.name }}</span>
-                    </h3>
-                    <span
-                      class="text-xs bg-white/20 px-2 py-0.5 rounded-full text-white"
-                    >
-                      {{
-                        p.lotes && p.lotes.length
-                          ? p.lotes.length + " lote(s)"
-                          : "Sem lotes"
-                      }}
-                    </span>
-                  </div>
-
-                  <!-- Lotes Content with enhanced styling -->
-                  <div class="p-3 bg-white">
-                    <!-- Existing Lotes with enhanced styling -->
-                    <div class="space-y-2 max-h-60 overflow-y-auto mb-3 pr-1">
-                      <div
-                        v-for="lote in p.lotes"
-                        :key="lote.id"
-                        class="p-3 border border-gray-200 rounded-lg bg-gray-50 flex justify-between items-center hover:bg-gray-100 transition-colors shadow-sm"
-                      >
-                        <div>
-                          <div class="flex items-baseline">
-                            <span class="font-bold text-lg text-indigo-700">{{
-                              lote.quantity
-                            }}</span>
-                            <span class="text-gray-600 ml-1">{{ p.unit }}</span>
-                          </div>
-                          <div class="text-sm text-gray-600">
-                            <span class="font-medium text-gray-700"
-                              >Validade:</span
-                            >
-                            <span class="font-medium">{{
-                              formatDate(lote.dataValidade)
-                            }}</span>
-                          </div>
-                          <span class="text-gray-400 text-xs"
-                            >ID: {{ lote.id.substring(0, 6) }}</span
-                          >
-                        </div>
-
-                        <div class="flex gap-2">
-                          <button
-                            @click="openEditLote(lote)"
-                            class="btn-edit-enhanced"
-                            :disabled="!isEditMode"
-                            :class="{
-                              'opacity-50 cursor-not-allowed': !isEditMode,
-                            }"
-                            title="Editar lote"
-                          >
-                            <span class="material-icons-outlined">edit</span>
-                          </button>
-                          <button
-                            @click="requestDeleteLote(lote.id, p.id)"
-                            class="btn-delete-enhanced"
-                            :disabled="!isEditMode"
-                            :class="{
-                              'opacity-50 cursor-not-allowed': !isEditMode,
-                            }"
-                            title="Excluir lote"
-                          >
-                            <span class="material-icons-outlined">delete</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <!-- Empty state for no lotes -->
-                      <div
-                        v-if="!p.lotes || p.lotes.length === 0"
-                        class="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center text-gray-500 italic"
-                      >
-                        Nenhum lote cadastrado para este produto.
-                      </div>
-                    </div>
-
-                    <!-- Add New Lote Row with enhanced styling -->
-                    <div
-                      @click="openAddLote(p.id)"
-                      class="p-3 border-2 border-dashed border-indigo-300 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 flex justify-center items-center gap-2 cursor-pointer transition-all hover:shadow-md"
-                      :class="{ 'opacity-60 cursor-not-allowed': !isEditMode }"
-                    >
-                      <span class="material-icons-outlined text-indigo-600"
-                        >add_circle</span
-                      >
-                      <span class="font-medium">Adicionar Novo Lote</span>
-                      <span
-                        v-if="!isEditMode"
-                        class="text-xs italic text-indigo-500"
-                      >
-                        (Ative o modo de edição)
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </td>
+              <LoteDropdown
+                :product="product"
+                :is-edit-mode="isEditMode"
+                @open-edit-lote="openEditLote"
+                @request-delete-lote="requestDeleteLote"
+                @open-add-lote="openAddLote"
+              />
             </tr>
           </template>
 
@@ -1149,23 +861,16 @@ function formatDate(dateString?: string) {
 .btn-primary {
   @apply px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm shadow-sm hover:shadow flex items-center font-medium;
 }
+.btn-secondary {
+  @apply px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-sm shadow-sm hover:shadow;
+}
 .btn-secondary-enhanced {
   @apply px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-sm shadow-sm hover:shadow flex items-center font-medium;
 }
 .btn-danger-enhanced {
   @apply px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm shadow-sm hover:shadow flex items-center font-medium;
 }
-.btn-qty-enhanced {
-  @apply px-2 py-1 bg-red-500/90 hover:bg-red-600 text-white rounded font-bold shadow-sm hover:shadow transition-all;
-}
-.btn-edit-enhanced {
-  @apply p-2 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-lg transition-colors shadow-sm hover:shadow flex items-center justify-center;
-}
-.btn-delete-enhanced {
-  @apply p-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors shadow-sm hover:shadow flex items-center justify-center;
-}
-.text-xxs {
-  font-size: 0.65rem;
-  line-height: 0.85rem;
+.input-field {
+  @apply px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500;
 }
 </style>

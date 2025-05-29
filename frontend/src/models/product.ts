@@ -18,7 +18,12 @@ export interface ProductChange {
   isNewProduct?: boolean; // Flag to indicate a new product was added
   isProductRemoval?: boolean; // Flag to indicate a product was completely removed
   // Optional: to store what was changed if it's an 'update' action
-  changedFields?: { field: string; oldValue?: any; newValue?: any }[];
+  changedFields?: {
+    field: string;
+    oldValue?: any;
+    newValue?: any;
+    loteId?: string; // Added loteId for lote operations
+  }[];
 }
 
 export interface ProductHistory {
