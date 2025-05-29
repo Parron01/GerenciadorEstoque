@@ -151,6 +151,7 @@ export const useAuthStore = defineStore("auth", () => {
     isLoading,
     isAuthenticated,
     isLocalMode,
+    API_BASE_URL, // Expose it
     login,
     logout,
     useLocalMode,

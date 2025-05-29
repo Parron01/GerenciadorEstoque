@@ -1,8 +1,12 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import type { ProductHistory, ProductChange } from "@/models/product";
+import type { ParsedHistoryRecord } from "@/models/history"; // Import new history model
 import { v4 as uuidv4 } from "uuid";
 import { useAuthStore } from "@/stores/authStore";
+import { useToast } from "vue-toastification";
+import * as api from "@/services/apiService"; // Import API service
+import { useProductStore } from "./productStore";
 
 // Storage key depends on auth mode
 const getStorageKey = () => {
@@ -14,7 +18,10 @@ const getStorageKey = () => {
 
 export const useHistoryStore = defineStore("history", () => {
   const authStore = useAuthStore();
-  const history = ref<ProductHistory[]>([]);
+  // History can be ProductHistory (local mode, batched product changes) or ParsedHistoryRecord (auth mode)
+  const history = ref<(ProductHistory | ParsedHistoryRecord)[]>([]);
+  const toast = useToast();
+  const isLoading = ref(false);
 
   // Dados de demonstração para o modo local
   const createDemoHistory = (): ProductHistory[] => {
@@ -28,7 +35,7 @@ export const useHistoryStore = defineStore("history", () => {
         date: oneHourAgo,
         changes: [
           {
-            productId: "1",
+            productId: "demo-prod-1", // Example ID from productStore demo data
             productName: "Fertilizante NPK",
             action: "add",
             quantityChanged: 20,
@@ -42,7 +49,7 @@ export const useHistoryStore = defineStore("history", () => {
         date: yesterday,
         changes: [
           {
-            productId: "2",
+            productId: "demo-prod-2", // Example ID
             productName: "Herbicida Natural",
             action: "remove",
             quantityChanged: 5,
@@ -51,72 +58,135 @@ export const useHistoryStore = defineStore("history", () => {
           },
         ],
       },
-      {
-        id: uuidv4(),
-        date: lastWeek,
-        changes: [
-          {
-            productId: "3",
-            productName: "Adubo Orgânico",
-            action: "add",
-            quantityChanged: 50,
-            quantityBefore: 150,
-            quantityAfter: 200,
-            isNewProduct: true,
-          },
-        ],
-      },
+      // ... more demo entries
     ];
   };
 
-  function loadFromStorage() {
-    const storageKey = getStorageKey();
-    const data = localStorage.getItem(storageKey);
+  async function fetchHistoryFromApi() {
+    if (authStore.isLocalMode) {
+      loadFromStorage(); // Local mode uses localStorage
+      return;
+    }
+    isLoading.value = true;
+    try {
+      const rawHistory = await api.fetchHistoryApi();
+      const productStore = useProductStore(); // To get product names for context
 
-    if (data) {
-      history.value = JSON.parse(data);
-    } else if (authStore.isLocalMode) {
-      // Usar histórico de demonstração para modo local
-      history.value = createDemoHistory();
-      saveToStorage(); // Salvar para persistência
-    } else {
-      // Inicializar com array vazio para modo autenticado sem dados
+      // Enrich lote history with product names if possible
+      history.value = rawHistory.map((record) => {
+        if (
+          record.entityType === "lote" &&
+          record.details &&
+          (record.details as any).productId
+        ) {
+          const product = productStore.products.find(
+            (p) => p.id === (record.details as any).productId
+          );
+          return {
+            ...record,
+            productNameContext: product?.name || "Produto Desconhecido",
+          };
+        }
+        return record;
+      });
+    } catch (error: any) {
+      toast.error(`Erro ao buscar histórico: ${error.message}`);
       history.value = [];
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  function loadFromStorage() {
+    if (authStore.isLocalMode) {
+      const storageKey = getStorageKey();
+      const data = localStorage.getItem(storageKey);
+      if (data) {
+        history.value = JSON.parse(data);
+      } else {
+        history.value = createDemoHistory();
+        saveToStorage();
+      }
+    } else {
+      // For authenticated mode, data is fetched.
+      // This function is primarily for local mode persistence.
     }
   }
 
   function saveToStorage() {
-    const storageKey = getStorageKey();
-    localStorage.setItem(storageKey, JSON.stringify(history.value));
+    if (authStore.isLocalMode) {
+      const storageKey = getStorageKey();
+      localStorage.setItem(storageKey, JSON.stringify(history.value));
+    }
   }
 
+  // This function is for local mode product batch changes
   function addBatchEntry(changes: ProductChange[]) {
-    if (changes.length === 0) return;
+    if (!authStore.isLocalMode || changes.length === 0) return;
 
-    history.value.unshift({
+    const newEntry: ProductHistory = {
       id: uuidv4(),
       date: new Date().toISOString(),
       changes,
-    });
+    };
+    history.value.unshift(newEntry);
     saveToStorage();
   }
 
-  // Carregar dados ao inicializar o store
-  loadFromStorage();
+  // Call this after Lote/Product operations in AUTH mode to refresh history
+  function refreshHistory() {
+    if (authStore.isAuthenticated) {
+      fetchHistoryFromApi();
+    }
+  }
 
-  // Watch for changes in auth mode to reload data
+  // Initial data load logic
+  if (authStore.isAuthenticated) {
+    fetchHistoryFromApi();
+  } else if (authStore.isLocalMode) {
+    loadFromStorage();
+  }
+
   watch(
     () => authStore.isLocalMode,
-    () => {
-      loadFromStorage();
+    (newIsLocalMode) => {
+      if (newIsLocalMode) {
+        loadFromStorage();
+      } else {
+        fetchHistoryFromApi();
+      }
+    },
+    { immediate: false }
+  );
+
+  watch(
+    () => authStore.token,
+    (newToken) => {
+      if (newToken && !authStore.isLocalMode) {
+        fetchHistoryFromApi();
+      } else if (!newToken && !authStore.isLocalMode) {
+        history.value = [];
+      }
     }
   );
 
-  watch(history, saveToStorage, { deep: true });
+  // Watch history for local mode saving
+  watch(
+    history,
+    () => {
+      if (authStore.isLocalMode) {
+        saveToStorage();
+      }
+    },
+    { deep: true }
+  );
 
   return {
     history,
-    addBatchEntry,
-    loadFromStorage,
+    isLoading,
+    addBatchEntry, // For local mode product changes
+    fetchHistoryFromApi, // For auth mode
+    loadFromStorage, // For explicit reloads if needed
+    refreshHistory, // To be called after CRUD operations in auth mode
   };
 });
