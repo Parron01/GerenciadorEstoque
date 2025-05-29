@@ -35,12 +35,29 @@ type Lote struct {
 // History represents a history entry in the database
 // It corresponds to the ProductHistory interface in Node.js
 type History struct {
-    ID         string          `json:"id"`          // UUID
-    Date       string          `json:"date"`        // Kept as string to match existing, ideally time.Time
-    EntityType string          `json:"entity_type"` // "product" or "lote"
-    EntityID   string          `json:"entity_id"`   // ID of the product or lote
-    Changes    json.RawMessage `json:"changes"`     // JSON string detailing changes
-    BatchID    string          `json:"batch_id"`    // UUID to group related history entries
+    ID         string          `json:"id" db:"id"`
+    Date       string          `json:"date" db:"date"` // Consider using time.Time and handling format in marshalling/unmarshalling
+    EntityType string          `json:"entityType" db:"entity_type"`
+    EntityID   string          `json:"entityId" db:"entity_id"`
+    Changes    json.RawMessage `json:"changes" db:"changes"` // Storing as raw JSON
+    BatchID    string          `json:"batchId" db:"batch_id"` // New field for grouping history entries
+}
+
+// HistoryBatchGroup represents a collection of history records for a single batch operation.
+type HistoryBatchGroup struct {
+	BatchID     string    `json:"batchId"`
+	CreatedAt   string    `json:"createdAt"` // Timestamp of the first entry in the batch, for ordering
+	Records     []History `json:"records"`
+	RecordCount int       `json:"recordCount"`
+}
+
+// PaginatedHistoryBatchGroups represents a paginated response for grouped history.
+type PaginatedHistoryBatchGroups struct {
+	Groups       []HistoryBatchGroup `json:"groups"`
+	TotalBatches int                 `json:"totalBatches"`
+	Page         int                 `json:"page"`
+	PageSize     int                 `json:"pageSize"`
+	TotalPages   int                 `json:"totalPages"`
 }
 
 // LoginRequest represents a login request

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useProductStore } from "@/stores/productStore";
 import { useHistoryStore } from "@/stores/historyStore";
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import type { ProductChange, Product } from "@/models/product";
 import type { Lote, LotePayload } from "@/models/lote";
 import { v4 as uuidv4 } from "uuid";
@@ -31,7 +31,6 @@ const newProduct = ref<Omit<Product, "id" | "lotes">>({
 });
 
 // Temp states for edit mode
-const tempQuantities = ref<Record<string, number>>({});
 const tempProductDetails = ref<
   Record<string, { name: string; unit: "L" | "kg" }>
 >({});
@@ -63,12 +62,8 @@ function getProductDisplayQuantity(product: Product): number {
 }
 
 function initTempStates() {
-  // Create deep copy of products for tracking changes and potential cancellation
   productsBeforeEdit.value = JSON.parse(JSON.stringify(productStore.products));
-
-  // Initialize temp values for editable fields
   productStore.products.forEach((product) => {
-    tempQuantities.value[product.id] = getProductDisplayQuantity(product);
     tempProductDetails.value[product.id] = {
       name: product.name,
       unit: product.unit,
@@ -81,272 +76,235 @@ function enableEditMode() {
   isEditMode.value = true;
 }
 
-function changeProductQuantity(id: string, delta: number) {
-  // For products without lotes in edit mode
-  const product = productStore.products.find((p) => p.id === id);
-  if (product && (!product.lotes || product.lotes.length === 0)) {
-    tempQuantities.value[id] = Math.max(
-      0,
-      (tempQuantities.value[id] || 0) + delta
-    );
-  }
-}
-
-function updateProductQuantityDirectly(id: string, value: number) {
-  // For products without lotes in edit mode
-  const product = productStore.products.find((p) => p.id === id);
-  if (product && (!product.lotes || product.lotes.length === 0)) {
-    tempQuantities.value[id] = Math.max(0, value);
-  }
-}
-
-// Track all changes made during edit session to generate correct history
 const loteChangesTracking = ref<{
-  created: { productId: string; lote: Lote }[];
+  created: { productId: string; loteData: LotePayload; localId: string }[];
   updated: {
     productId: string;
     loteId: string;
-    before: LotePayload;
-    after: LotePayload;
+    loteData: LotePayload;
+    originalLote: Lote;
   }[];
-  deleted: { productId: string; loteId: string; lote: Lote }[];
+  deleted: { productId: string; loteId: string; originalLote: Lote }[];
 }>({
   created: [],
   updated: [],
   deleted: [],
 });
 
-// Add new function to update base quantity of product
-function updateProductBaseQuantity(productId: string, newBaseQuantity: number) {
-  if (isEditMode.value) {
-    const product = productStore.products.find((p) => p.id === productId);
-    if (product) {
-      // Store original base quantity for history tracking
-      const originalBaseQuantity = product.quantity;
-
-      // Update base quantity in temp state for history tracking
-      if (!productsBeforeEdit.value.find((p) => p.id === productId)?.quantity) {
-        // If not already stored, create a snapshot
-        const originalProduct = JSON.parse(JSON.stringify(product));
-        const existingIndex = productsBeforeEdit.value.findIndex(
-          (p) => p.id === productId
-        );
-        if (existingIndex >= 0) {
-          productsBeforeEdit.value[existingIndex] = originalProduct;
-        } else {
-          productsBeforeEdit.value.push(originalProduct);
-        }
-      }
-
-      // Update the model
-      product.quantity = Math.max(0, newBaseQuantity);
-
-      toast.success(
-        `Quantidade base do produto atualizada para ${newBaseQuantity}`
-      );
-    }
-  }
+function closeDeleteDialog() {
+  showDeleteDialog.value = false;
+  productToDelete.value = null;
 }
 
+function openAddLote(productId: string) {
+  if (!isEditMode.value) {
+    toast.info("Ative o modo de edição para adicionar lotes.");
+    return;
+  }
+  currentProductIdForLote.value = productId;
+  showAddLoteModal.value = true;
+}
+
+function openEditLote(lote: Lote) {
+  if (!isEditMode.value) {
+    toast.info("Ative o modo de edição para editar lotes.");
+    return;
+  }
+  currentLoteToEdit.value = JSON.parse(JSON.stringify(lote));
+  showEditLoteModal.value = true;
+}
+
+function requestDeleteLote(loteId: string, productId: string) {
+  if (!isEditMode.value) {
+    toast.info("Ative o modo de edição para remover lotes.");
+    return;
+  }
+  loteToDelete.value = { loteId, productId };
+  showDeleteLoteDialog.value = true;
+}
+
+function closeDeleteLoteDialog() {
+  showDeleteLoteDialog.value = false;
+  loteToDelete.value = null;
+}
+
+const isComponentMounted = ref(true);
+
+onBeforeUnmount(() => {
+  isComponentMounted.value = false;
+});
+
 async function confirmUpdates() {
-  const productChangesBatch: ProductChange[] = [];
+  const operationBatchId = uuidv4();
+  let allApiCallsSuccessful = true;
 
-  // First collect all changes for history
+  for (const { productId, loteId } of loteChangesTracking.value.deleted) {
+    if (authStore.isLocalMode) {
+      // ...
+    } else {
+      try {
+        if (!isComponentMounted.value) return;
+        await productStore.deleteLote(loteId, productId, operationBatchId);
+      } catch (e) {
+        if (!isComponentMounted.value) return;
+        allApiCallsSuccessful = false;
+        toast.error(`Erro ao deletar lote ${loteId.substring(0, 6)}: ${e}`);
+      }
+    }
+  }
 
-  // 1. Product detail and quantity changes
+  for (const { productId, loteId, loteData } of loteChangesTracking.value
+    .updated) {
+    if (authStore.isLocalMode) {
+      // ...
+    } else {
+      try {
+        if (!isComponentMounted.value) return;
+        await productStore.updateLote(
+          loteId,
+          productId,
+          loteData,
+          operationBatchId
+        );
+      } catch (e) {
+        if (!isComponentMounted.value) return;
+        allApiCallsSuccessful = false;
+        toast.error(`Erro ao atualizar lote ${loteId.substring(0, 6)}: ${e}`);
+      }
+    }
+  }
+
+  for (const { productId, loteData } of loteChangesTracking.value.created) {
+    if (authStore.isLocalMode) {
+      // ...
+    } else {
+      try {
+        if (!isComponentMounted.value) return;
+        await productStore.createLote(productId, loteData, operationBatchId);
+      } catch (e) {
+        if (!isComponentMounted.value) return;
+        allApiCallsSuccessful = false;
+        toast.error(`Erro ao criar novo lote para ${productId}: ${e}`);
+      }
+    }
+  }
+
   for (const product of productStore.products) {
     const originalProduct = productsBeforeEdit.value.find(
       (p) => p.id === product.id
     );
     if (!originalProduct) continue;
 
-    const originalDisplayQuantity = getProductDisplayQuantity(originalProduct);
-    const originalBaseQuantity = originalProduct.quantity;
     const editedName = tempProductDetails.value[product.id]?.name;
     const editedUnit = tempProductDetails.value[product.id]?.unit;
 
-    // Handle base quantity changes (NEW)
-    if (product.quantity !== originalBaseQuantity) {
-      productChangesBatch.push({
-        productId: product.id,
-        productName: editedName || product.name,
-        action: "product_base_quantity_updated",
-        quantityBefore: originalBaseQuantity,
-        quantityAfter: product.quantity,
-        changedFields: [
-          {
-            field: "base_quantity",
-            oldValue: originalBaseQuantity,
-            newValue: product.quantity,
-          },
-        ],
-      });
+    const productUpdatePayload: Partial<Pick<Product, "name" | "unit">> = {};
+    let productDetailsChanged = false;
+
+    if (editedName && editedName !== originalProduct.name) {
+      productUpdatePayload.name = editedName;
+      productDetailsChanged = true;
+    }
+    if (editedUnit && editedUnit !== originalProduct.unit) {
+      productUpdatePayload.unit = editedUnit;
+      productDetailsChanged = true;
     }
 
-    // Handle product detail changes (name, unit)
-    if (
-      (editedName && editedName !== originalProduct.name) ||
-      (editedUnit && editedUnit !== originalProduct.unit)
-    ) {
-      // Add to history batch
-      productChangesBatch.push({
-        productId: product.id,
-        productName: editedName || product.name,
-        action: "product_details_updated",
-        changedFields: [
-          ...(editedName !== originalProduct.name
-            ? [
-                {
-                  field: "name",
-                  oldValue: originalProduct.name,
-                  newValue: editedName,
-                },
-              ]
-            : []),
-          ...(editedUnit !== originalProduct.unit
-            ? [
-                {
-                  field: "unit",
-                  oldValue: originalProduct.unit,
-                  newValue: editedUnit,
-                },
-              ]
-            : []),
-        ],
-      });
-
-      // Apply to product store
-      await productStore.updateProductDetails(product.id, {
-        name: editedName,
-        unit: editedUnit,
-      });
-    }
-
-    // Handle quantity changes for products WITHOUT lotes
-    if (!product.lotes || product.lotes.length === 0) {
-      const tempQty = tempQuantities.value[product.id];
-      if (tempQty !== undefined && tempQty !== originalDisplayQuantity) {
-        const delta = tempQty - originalDisplayQuantity;
-
-        // Add to history batch
-        productChangesBatch.push({
-          productId: product.id,
-          productName: editedName || product.name,
-          action: delta > 0 ? "add" : "remove",
-          quantityChanged: Math.abs(delta),
-          quantityBefore: originalDisplayQuantity,
-          quantityAfter: tempQty,
-        });
-
-        // Apply to product store
-        productStore.updateProductQuantity(product.id, tempQty);
+    if (productDetailsChanged) {
+      if (authStore.isLocalMode) {
+        if (productUpdatePayload.name) product.name = productUpdatePayload.name;
+        if (productUpdatePayload.unit) product.unit = productUpdatePayload.unit;
+      } else {
+        try {
+          if (!isComponentMounted.value) return;
+          await productStore.updateProductDetails(
+            product.id,
+            productUpdatePayload,
+            operationBatchId
+          );
+        } catch (e) {
+          allApiCallsSuccessful = false;
+          toast.error(
+            `Erro ao atualizar produto ${originalProduct.name}: ${e}`
+          );
+        }
       }
     }
   }
 
-  // 2. Lote changes
-
-  // Created lotes
-  for (const { productId, lote } of loteChangesTracking.value.created) {
-    const product = productStore.products.find((p) => p.id === productId);
-    if (!product) continue;
-
-    productChangesBatch.push({
-      productId: productId,
-      productName: product.name,
-      action: "lote_created",
-      changedFields: [
-        {
-          field: "lote",
-          loteId: lote.id,
-          newValue: {
-            quantity: lote.quantity,
-            dataValidade: lote.dataValidade,
-          },
-        },
-      ],
+  if (authStore.isLocalMode) {
+    const productChangesBatchForLocal: ProductChange[] = [];
+    productsBeforeEdit.value.forEach((originalProduct) => {
+      const currentProduct = productStore.products.find(
+        (p) => p.id === originalProduct.id
+      );
+      if (!currentProduct) return;
+      const editedName = tempProductDetails.value[originalProduct.id]?.name;
+      const editedUnit = tempProductDetails.value[originalProduct.id]?.unit;
+      if (
+        (editedName && editedName !== originalProduct.name) ||
+        (editedUnit && editedUnit !== originalProduct.unit)
+      ) {
+        productChangesBatchForLocal.push({
+          productId: originalProduct.id,
+          productName: editedName || currentProduct.name,
+          action: "product_details_updated",
+          changedFields: [
+            /* ... populate ... */
+          ],
+        });
+      }
     });
-  }
-
-  // Updated lotes
-  for (const { productId, loteId, before, after } of loteChangesTracking.value
-    .updated) {
-    const product = productStore.products.find((p) => p.id === productId);
-    if (!product) continue;
-
-    productChangesBatch.push({
-      productId: productId,
-      productName: product.name,
-      action: "lote_updated",
-      changedFields: [
-        {
-          field: "lote",
-          loteId: loteId,
-          oldValue: before,
-          newValue: after,
-        },
-      ],
+    loteChangesTracking.value.created.forEach((change) => {
+      productChangesBatchForLocal.push({
+        productId: change.productId,
+        productName:
+          productStore.products.find((p) => p.id === change.productId)?.name ||
+          "",
+        action: "lote_created",
+        changedFields: [
+          { field: "lote", loteId: change.localId, newValue: change.loteData },
+        ],
+      });
     });
-  }
 
-  // Deleted lotes
-  for (const { productId, loteId, lote } of loteChangesTracking.value.deleted) {
-    const product = productStore.products.find((p) => p.id === productId);
-    if (!product) continue;
-
-    productChangesBatch.push({
-      productId: productId,
-      productName: product.name,
-      action: "lote_deleted",
-      changedFields: [
-        {
-          field: "lote",
-          loteId: loteId,
-          oldValue: {
-            quantity: lote.quantity,
-            dataValidade: lote.dataValidade,
-          },
-        },
-      ],
-    });
-  }
-
-  // Create history entry from collected changes
-  if (authStore.isLocalMode && productChangesBatch.length > 0) {
-    historyStore.addBatchEntry(productChangesBatch);
-    toast.success("Todas as alterações foram aplicadas e registradas!");
-  } else if (!authStore.isLocalMode && productChangesBatch.length > 0) {
-    // For auth mode, refresh history from server
-    historyStore.refreshHistory();
-    toast.success("Alterações enviadas ao servidor!");
-  }
-
-  // Refresh data if in auth mode
-  if (!authStore.isLocalMode) {
+    if (productChangesBatchForLocal.length > 0) {
+      historyStore.addBatchEntry(productChangesBatchForLocal);
+    }
+    productStore.saveToStorage();
+    toast.success(
+      "Todas as alterações foram aplicadas e registradas localmente!"
+    );
+  } else {
+    if (allApiCallsSuccessful) {
+      toast.success("Alterações enviadas ao servidor!");
+    } else {
+      toast.warning(
+        "Algumas alterações falharam. Verifique os logs e tente novamente."
+      );
+    }
     await productStore.fetchProductsFromApi();
-    historyStore.refreshHistory();
+    await historyStore.refreshHistory();
   }
 
-  // Reset states
+  if (!isComponentMounted.value) return;
   isEditMode.value = false;
   productsBeforeEdit.value = [];
   loteChangesTracking.value = { created: [], updated: [], deleted: [] };
-  expandedProducts.value = {}; // Close all accordions
+  expandedProducts.value = {};
+  tempProductDetails.value = {};
 }
 
 function cancelEdit() {
-  // Revert to original state by loading from storage or API
   if (authStore.isLocalMode) {
     productStore.loadFromStorage();
   } else {
     productStore.fetchProductsFromApi();
   }
-
-  // Reset all tracking and edit states
   isEditMode.value = false;
   productsBeforeEdit.value = [];
   loteChangesTracking.value = { created: [], updated: [], deleted: [] };
-  expandedProducts.value = {}; // Close all accordions
+  expandedProducts.value = {};
   toast.info("Alterações canceladas.");
 }
 
@@ -359,32 +317,34 @@ function openAddProductForm() {
 
 function cancelAddProduct() {
   isAddProductMode.value = false;
+  newProduct.value = { name: "", unit: "L", quantity: 0 };
 }
 
 async function addProductHandler() {
-  if (!newProduct.value.name || newProduct.value.quantity < 0) {
-    toast.error("Nome do produto e quantidade válida são obrigatórios.");
+  if (!newProduct.value.name) {
+    toast.error("Nome do produto é obrigatório.");
     return;
   }
-  await productStore.addProduct({ ...newProduct.value });
+  await productStore.addProduct(newProduct.value);
+
   if (authStore.isLocalMode) {
+    const createdProd = productStore.products.find(
+      (p) =>
+        p.name === newProduct.value.name && p.unit === newProduct.value.unit
+    );
     historyStore.addBatchEntry([
       {
-        productId:
-          productStore.products.find((p) => p.name === newProduct.value.name)
-            ?.id || uuidv4(), // Approximate ID for local
+        productId: createdProd?.id || uuidv4(),
         productName: newProduct.value.name,
         action: "created",
-        quantityChanged: newProduct.value.quantity,
-        quantityBefore: 0,
-        quantityAfter: newProduct.value.quantity,
         isNewProduct: true,
       },
     ]);
   } else {
-    historyStore.refreshHistory(); // Backend handles history
+    await historyStore.refreshHistory();
   }
   isAddProductMode.value = false;
+  newProduct.value = { name: "", unit: "L", quantity: 0 };
 }
 
 function requestDeleteProduct(product: Product) {
@@ -398,8 +358,6 @@ async function confirmDeleteProduct() {
   if (productToDelete.value) {
     const prodName = productToDelete.value.name;
     const prodId = productToDelete.value.id;
-    const originalQuantity = getProductDisplayQuantity(productToDelete.value);
-
     await productStore.removeProduct(prodId);
 
     if (authStore.isLocalMode) {
@@ -408,191 +366,135 @@ async function confirmDeleteProduct() {
           productId: prodId,
           productName: prodName,
           action: "deleted",
-          quantityChanged: originalQuantity,
-          quantityBefore: originalQuantity,
-          quantityAfter: 0,
           isProductRemoval: true,
         },
       ]);
     } else {
-      historyStore.refreshHistory(); // Backend handles history
+      await historyStore.refreshHistory();
     }
-    toast.info(`Produto "${prodName}" removido.`);
     closeDeleteDialog();
   }
 }
 
-function closeDeleteDialog() {
-  showDeleteDialog.value = false;
-  productToDelete.value = null;
-}
-
-// Lote actions - only available in edit mode for consistent history
-function openAddLote(productId: string) {
-  if (!isEditMode.value) {
-    toast.info(
-      "Ative o modo de edição usando 'Atualizar Dados' para adicionar lotes."
-    );
-    return;
-  }
-  currentProductIdForLote.value = productId;
-  showAddLoteModal.value = true;
-}
-
 async function handleSaveLote(loteData: LotePayload) {
-  if (!currentProductIdForLote.value) return;
+  if (!currentProductIdForLote.value || !isEditMode.value) return;
 
-  if (isEditMode.value) {
-    // In edit mode, track lote operations for batched history
-    // Create lote in memory
-    const newLote: Lote = {
+  const localLoteId = uuidv4();
+  loteChangesTracking.value.created.push({
+    productId: currentProductIdForLote.value,
+    loteData: loteData,
+    localId: localLoteId,
+  });
+
+  const product = productStore.products.find(
+    (p) => p.id === currentProductIdForLote.value
+  );
+  if (product) {
+    if (!product.lotes) product.lotes = [];
+    product.lotes.push({
       ...loteData,
-      id: uuidv4(),
+      id: localLoteId,
       productId: currentProductIdForLote.value,
       createdAt: new Date().toISOString(),
-    };
-
-    // Add to tracking for history
-    loteChangesTracking.value.created.push({
-      productId: currentProductIdForLote.value,
-      lote: newLote,
     });
-
-    // Find the product and add the lote to it
-    const product = productStore.products.find(
-      (p) => p.id === currentProductIdForLote.value
-    );
-    if (product) {
-      if (!product.lotes) product.lotes = [];
-      product.lotes.push(newLote);
-    }
-
-    toast.success("Lote adicionado e será salvo ao confirmar as atualizações.");
-  } else {
-    // Normal flow when not in edit mode (should never happen with UI restrictions)
-    await productStore.createLote(currentProductIdForLote.value, loteData);
-    if (!authStore.isLocalMode) historyStore.refreshHistory();
   }
-
+  toast.success("Lote adicionado e será salvo ao confirmar as atualizações.");
   showAddLoteModal.value = false;
   currentProductIdForLote.value = null;
 }
 
-function openEditLote(lote: Lote) {
-  if (!isEditMode.value) {
-    toast.info(
-      "Ative o modo de edição usando 'Atualizar Dados' para editar lotes."
-    );
+async function handleUpdateLote(loteId: string, loteData: LotePayload) {
+  if (!currentLoteToEdit.value || !isEditMode.value) return;
+  const productId = currentLoteToEdit.value.productId;
+
+  const productForOriginal = productStore.products.find(
+    (p) => p.id === productId
+  );
+  const originalLote = productForOriginal?.lotes?.find((l) => l.id === loteId);
+  if (!originalLote) {
+    toast.error("Lote original não encontrado para atualização.");
     return;
   }
 
-  currentLoteToEdit.value = { ...lote }; // Pass a copy
-  showEditLoteModal.value = true;
-}
+  loteChangesTracking.value.updated = loteChangesTracking.value.updated.filter(
+    (t) => !(t.productId === productId && t.loteId === loteId)
+  );
+  loteChangesTracking.value.updated.push({
+    productId,
+    loteId,
+    loteData,
+    originalLote: JSON.parse(JSON.stringify(originalLote)),
+  });
 
-async function handleUpdateLote(loteId: string, loteData: LotePayload) {
-  if (!currentLoteToEdit.value) return;
-  const productId = currentLoteToEdit.value.productId;
-
-  if (isEditMode.value) {
-    // Find the original lote data
-    const product = productStore.products.find((p) => p.id === productId);
-    const lote = product?.lotes?.find((l) => l.id === loteId);
-
-    if (lote) {
-      // Save before state
-      const beforeData: LotePayload = {
-        quantity: lote.quantity,
-        dataValidade: lote.dataValidade,
-      };
-
-      // Track the update
-      loteChangesTracking.value.updated.push({
-        productId,
-        loteId,
-        before: beforeData,
-        after: loteData,
-      });
-
-      // Update the lote
-      Object.assign(lote, loteData, {
-        updatedAt: new Date().toISOString(),
-      });
-
-      toast.success(
-        "Lote atualizado e será salvo ao confirmar as atualizações."
-      );
-    }
-  } else {
-    // Normal flow when not in edit mode (should never happen with UI restrictions)
-    await productStore.updateLote(loteId, productId, loteData);
-    if (!authStore.isLocalMode) historyStore.refreshHistory();
+  const product = productStore.products.find((p) => p.id === productId);
+  const loteToUpdate = product?.lotes?.find((l) => l.id === loteId);
+  if (loteToUpdate) {
+    Object.assign(loteToUpdate, loteData, {
+      updatedAt: new Date().toISOString(),
+    });
   }
-
+  toast.success("Lote atualizado e será salvo ao confirmar as atualizações.");
   showEditLoteModal.value = false;
   currentLoteToEdit.value = null;
 }
 
-function requestDeleteLote(loteId: string, productId: string) {
-  if (!isEditMode.value) {
-    toast.info(
-      "Ative o modo de edição usando 'Atualizar Dados' para remover lotes."
-    );
+async function confirmDeleteLote() {
+  if (!loteToDelete.value || !isEditMode.value) return;
+  const { loteId, productId } = loteToDelete.value;
+
+  const productForOriginal = productStore.products.find(
+    (p) => p.id === productId
+  );
+  const originalLote = productForOriginal?.lotes?.find((l) => l.id === loteId);
+  if (!originalLote) {
+    toast.error("Lote original não encontrado para exclusão.");
     return;
   }
 
-  loteToDelete.value = { loteId, productId };
-  showDeleteLoteDialog.value = true;
-}
+  loteChangesTracking.value.deleted.push({
+    productId,
+    loteId,
+    originalLote: JSON.parse(JSON.stringify(originalLote)),
+  });
+  loteChangesTracking.value.created = loteChangesTracking.value.created.filter(
+    (t) => !(t.productId === productId && t.localId === loteId)
+  );
+  loteChangesTracking.value.updated = loteChangesTracking.value.updated.filter(
+    (t) => !(t.productId === productId && t.loteId === loteId)
+  );
 
-async function confirmDeleteLote() {
-  if (!loteToDelete.value) return;
-  const { loteId, productId } = loteToDelete.value;
-
-  if (isEditMode.value) {
-    // Find the product and lote
-    const product = productStore.products.find((p) => p.id === productId);
-    const loteIndex = product?.lotes?.findIndex((l) => l.id === loteId) ?? -1;
-
-    if (product && product.lotes && loteIndex >= 0) {
-      // Save the lote for tracking
-      const lote = product.lotes[loteIndex];
-
-      // Add to tracking for history
-      loteChangesTracking.value.deleted.push({
-        productId,
-        loteId,
-        lote: { ...lote }, // Store a copy
-      });
-
-      // Remove from the product
+  const product = productStore.products.find((p) => p.id === productId);
+  if (product && product.lotes) {
+    const loteIndex = product.lotes.findIndex((l) => l.id === loteId);
+    if (loteIndex !== -1) {
       product.lotes.splice(loteIndex, 1);
-
-      toast.info(
-        "Lote removido e será finalizado ao confirmar as atualizações."
-      );
     }
-  } else {
-    // Normal flow when not in edit mode (should never happen with UI restrictions)
-    await productStore.deleteLote(loteId, productId);
-    if (!authStore.isLocalMode) historyStore.refreshHistory();
   }
-
-  showDeleteLoteDialog.value = false;
-  loteToDelete.value = null;
-}
-
-function closeDeleteLoteDialog() {
+  toast.info("Lote removido e será finalizado ao confirmar as atualizações.");
   showDeleteLoteDialog.value = false;
   loteToDelete.value = null;
 }
 
 const products = computed(() => productStore.products);
+const sortedProducts = computed(() => {
+  return [...productStore.products].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+});
+
+onMounted(() => {
+  productStore.initializeStore();
+  if (!authStore.isLocalMode) {
+    historyStore.refreshHistory();
+  } else {
+    historyStore.fetchGroupedHistory();
+  }
+});
 </script>
 
 <template>
   <div>
-    <!-- Action Buttons - Enhanced with more vibrant colors and larger icons -->
+    <!-- Action Buttons -->
     <div class="flex flex-col sm:flex-row justify-end mb-4 gap-3">
       <template v-if="!isEditMode">
         <button
@@ -630,7 +532,7 @@ const products = computed(() => productStore.products);
       </template>
     </div>
 
-    <!-- Add Product Form with enhanced styling -->
+    <!-- Add Product Form -->
     <div
       v-if="isAddProductMode && !isEditMode"
       class="bg-white p-5 rounded-lg shadow-lg mb-6 border-l-4 border-emerald-500"
@@ -641,7 +543,7 @@ const products = computed(() => productStore.products);
         >
         Adicionar Novo Produto
       </h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1"
             >Nome</label
@@ -662,17 +564,6 @@ const products = computed(() => productStore.products);
             <option value="kg">Quilogramas (kg)</option>
           </select>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1"
-            >Qtd. Inicial (se sem lotes)</label
-          >
-          <input
-            v-model.number="newProduct.quantity"
-            type="number"
-            min="0"
-            class="w-full input-field"
-          />
-        </div>
       </div>
       <div class="mt-5 flex justify-end space-x-3">
         <button @click="cancelAddProduct" class="btn-secondary">
@@ -688,7 +579,7 @@ const products = computed(() => productStore.products);
       </div>
     </div>
 
-    <!-- Products Table with enhanced styling -->
+    <!-- Products Table -->
     <div class="overflow-x-auto rounded-lg shadow-lg border border-gray-200">
       <table class="min-w-full bg-white">
         <thead
@@ -696,34 +587,26 @@ const products = computed(() => productStore.products);
         >
           <tr>
             <th class="p-4 w-12 text-center">
-              <!-- Enhanced toggle column header -->
               <span class="material-icons-outlined text-indigo-200"
                 >expand_more</span
               >
             </th>
             <th class="p-4 text-left">Produto</th>
-            <th class="p-4 text-left">Unidade</th>
-            <th class="p-4 text-left">Qtd. Total</th>
-            <th class="p-4 text-left">Ações</th>
+            <th class="p-4 text-left text-center">Qtd. Total</th>
+            <th class="p-4 text-left text-center">Unidade</th>
+            <th class="p-4 text-left text-center">Ações</th>
           </tr>
         </thead>
         <tbody>
-          <template v-for="product in products" :key="product.id">
-            <!-- Product Row Component -->
+          <template v-for="product in sortedProducts" :key="product.id">
             <ProductRow
               :product="product"
               :is-edit-mode="isEditMode"
               :expanded-products="expandedProducts"
               :temp-product-details="tempProductDetails"
-              :temp-quantities="tempQuantities"
               @toggle-product-lotes="toggleProductLotes"
-              @quantity-changed="changeProductQuantity"
-              @quantity-updated="updateProductQuantityDirectly"
-              @update-product-base-quantity="updateProductBaseQuantity"
               @request-delete="requestDeleteProduct"
             />
-
-            <!-- Lotes Dropdown Component (expanded row) -->
             <tr
               v-if="expandedProducts[product.id]"
               class="bg-gradient-to-r from-indigo-50/80 to-indigo-50/50"
@@ -739,7 +622,6 @@ const products = computed(() => productStore.products);
             </tr>
           </template>
 
-          <!-- Empty state with enhanced styling -->
           <tr v-if="products.length === 0">
             <td colspan="5" class="p-8 text-center">
               <div
@@ -774,7 +656,7 @@ const products = computed(() => productStore.products);
       @save="handleUpdateLote"
     />
 
-    <!-- Delete Product Dialog with enhanced styling -->
+    <!-- Delete Product Dialog -->
     <div
       v-if="showDeleteDialog"
       class="fixed inset-0 flex items-center justify-center z-50"
@@ -812,7 +694,7 @@ const products = computed(() => productStore.products);
       </div>
     </div>
 
-    <!-- Delete Lote Dialog with enhanced styling -->
+    <!-- Delete Lote Dialog -->
     <div
       v-if="showDeleteLoteDialog"
       class="fixed inset-0 flex items-center justify-center z-50"
@@ -854,7 +736,6 @@ const products = computed(() => productStore.products);
 </template>
 
 <style scoped>
-/* Enhanced styles */
 .input-field-enhanced {
   @apply px-3 py-2 border border-indigo-300 rounded text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow;
 }

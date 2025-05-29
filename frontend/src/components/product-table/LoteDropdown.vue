@@ -16,7 +16,29 @@ const emit = defineEmits<{
 
 function formatDate(dateString?: string) {
   if (!dateString) return "N/A";
-  return new Date(dateString).toLocaleDateString();
+  // console.log("Formatting date:", dateString); // User's log, can be kept for debugging or removed
+
+  // Check if the dateString is in YYYY-MM-DD format (likely from user input not yet saved to backend)
+  if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    const parts = dateString.split("-");
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // JavaScript months are 0-indexed
+    const day = parseInt(parts[2], 10);
+    // Create a new Date object using local timezone components
+    return new Date(year, month, day).toLocaleDateString();
+  }
+
+  // For other formats, especially full ISO strings like "YYYY-MM-DDTHH:mm:ssZ"
+  try {
+    // Use toLocaleDateString with UTC timezone to display the date as it is in UTC
+    return new Date(dateString).toLocaleDateString(undefined, {
+      timeZone: "UTC",
+    });
+  } catch (e) {
+    // Fallback for invalid date strings
+    console.error("Error formatting date:", dateString, e);
+    return "Data Inválida";
+  }
 }
 
 function openEditLote(lote: Lote) {
@@ -31,11 +53,14 @@ function openAddLote() {
   emit("openAddLote", props.product.id);
 }
 
-const lotes = computed(() => props.product.lotes || []);
+const lotesToDisplay = computed(() => {
+  return props.product.lotes || [];
+});
 </script>
 
 <template>
   <td colspan="4" class="py-3 px-4">
+    <!-- Adjusted colspan to 4 -->
     <div class="rounded-lg border border-indigo-300 shadow-sm overflow-hidden">
       <!-- Lotes Header -->
       <div
@@ -46,7 +71,11 @@ const lotes = computed(() => props.product.lotes || []);
           Lotes de <span class="font-bold ml-1">{{ product.name }}</span>
         </h3>
         <span class="text-xs bg-white/20 px-2 py-0.5 rounded-full text-white">
-          {{ lotes.length ? lotes.length + " lote(s)" : "Sem lotes" }}
+          {{
+            lotesToDisplay.length
+              ? lotesToDisplay.length + " lote(s)"
+              : "Sem lotes"
+          }}
         </span>
       </div>
 
@@ -55,11 +84,11 @@ const lotes = computed(() => props.product.lotes || []);
         <!-- Existing Lotes -->
         <div class="space-y-2 max-h-60 overflow-y-auto mb-3 pr-1">
           <div
-            v-for="lote in lotes"
+            v-for="lote in lotesToDisplay"
             :key="lote.id"
-            class="p-3 border border-gray-200 rounded-lg bg-gray-50 flex justify-between items-center hover:bg-gray-100 transition-colors shadow-sm"
+            class="p-3 border border-gray-200 rounded-lg bg-gray-50 flex flex-col sm:flex-row justify-between sm:items-center hover:bg-gray-100 transition-colors shadow-sm"
           >
-            <div>
+            <div class="flex-grow">
               <div class="flex items-baseline">
                 <span class="font-bold text-lg text-indigo-700">{{
                   lote.quantity
@@ -77,7 +106,7 @@ const lotes = computed(() => props.product.lotes || []);
               >
             </div>
 
-            <div class="flex gap-2">
+            <div class="flex gap-2 mt-2 sm:mt-0">
               <button
                 @click="openEditLote(lote)"
                 class="btn-edit-enhanced"
@@ -101,7 +130,7 @@ const lotes = computed(() => props.product.lotes || []);
 
           <!-- Empty state for no lotes -->
           <div
-            v-if="lotes.length === 0"
+            v-if="lotesToDisplay.length === 0"
             class="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center text-gray-500 italic"
           >
             Nenhum lote cadastrado para este produto.
@@ -133,5 +162,11 @@ const lotes = computed(() => props.product.lotes || []);
 }
 .btn-delete-enhanced {
   @apply p-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors shadow-sm hover:shadow flex items-center justify-center;
+}
+.input-field-enhanced {
+  @apply px-2 py-1 border border-indigo-300 rounded text-sm focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow;
+}
+.input-field-enhanced:disabled {
+  @apply bg-gray-100 cursor-not-allowed;
 }
 </style>

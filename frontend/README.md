@@ -30,14 +30,21 @@ O sistema de frontend permite as seguintes operações:
 
 ### Gerenciamento de Estoque
 
-- **Visualizar Produtos:** Exibe uma tabela com todos os produtos em estoque, incluindo nome, quantidade e unidade.
+- **Visualizar Produtos:** Exibe uma tabela com todos os produtos em estoque, incluindo nome, quantidade total (somada dos lotes, se existentes, ou base) e unidade.
 - **Adicionar Novo Produto:**
-  - Formulário para inserir nome, unidade (L ou kg) e quantidade inicial do novo produto.
+  - Formulário para inserir nome, unidade (L ou kg) e quantidade inicial (se o produto não for gerenciado por lotes).
   - Ao adicionar, um registro é criado no histórico.
-- **Atualizar Quantidades:**
-  - Modo de edição permite alterar a quantidade dos produtos existentes.
-  - Botões de atalho para incrementar/decrementar quantidades (+1, -1, +10, -10).
-  - As alterações são salvas, gerando entradas no histórico.
+- **Gerenciamento de Lotes (para produtos aplicáveis):**
+  - Expandir um produto na tabela para visualizar seus lotes.
+  - **Adicionar Novo Lote:** Formulário para inserir quantidade e data de validade do lote.
+  - **Editar Lote:** Modificar quantidade e data de validade de um lote existente.
+  - **Remover Lote:** Excluir um lote.
+  - Todas as operações de lote são registradas no histórico. A quantidade total do produto é automaticamente atualizada no backend com base na soma dos seus lotes.
+- **Atualizar Detalhes e Quantidades:**
+  - Modo de edição permite alterar nome, unidade dos produtos.
+  - Para produtos _sem lotes_, permite alterar a quantidade diretamente.
+  - Botões de atalho para incrementar/decrementar quantidades (+1, -1, +10, -10) para produtos sem lotes.
+  - As alterações são salvas, gerando entradas no histórico. Em modo autenticado, múltiplas alterações podem ser agrupadas em um "batch" de histórico.
 - **Remover Produto:**
   - Permite remover um produto do estoque.
   - Uma confirmação é solicitada antes da remoção.
@@ -46,14 +53,15 @@ O sistema de frontend permite as seguintes operações:
 
 ### Histórico de Alterações
 
-- **Visualizar Histórico:** Exibe um registro de todas as movimentações de estoque (entradas, saídas, adições e remoções de produtos).
+- **Visualizar Histórico:** Exibe um registro de todas as movimentações de estoque (entradas, saídas, adições e remoções de produtos, criação/alteração/remoção de lotes, e atualizações de detalhes de produtos).
 - **Detalhes da Alteração:** Para cada entrada no histórico, mostra:
   - Data e hora da alteração.
-  - Nome do produto.
-  - Tipo de ação (adição/remoção de quantidade, criação/remoção de produto).
-  - Quantidade alterada.
-  - Quantidade antes e depois da alteração.
+  - Identificador do "batch" da operação (agrupa múltiplas alterações feitas de uma vez).
+  - Nome do produto e/ou ID do lote.
+  - Tipo de ação (ex: `product_created`, `lote_updated`, `quantity_changed`).
+  - Detalhes específicos da mudança (ex: quantidade antes/depois, campos alterados com valores antigos/novos).
 - **Filtrar Histórico:** Permite filtrar as movimentações por período (ex: Hoje, Esta semana, Este mês).
+- **Modo Autenticado:** O frontend envia as modificações de dados (criação/atualização/deleção de produtos/lotes) para o backend. Após a confirmação dessas operações, pode enviar um conjunto de entradas de histórico (`HistoryBatchInput`) para o endpoint `/api/history/batch` do backend, que agrupa essas entradas sob um `batchId` único. O backend também pode gerar registros de histórico individuais para cada operação de API.
 
 ### Persistência de Dados
 

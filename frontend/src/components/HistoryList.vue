@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { useHistoryStore } from "@/stores/historyStore";
 import { computed, ref, watch } from "vue";
-import type { ProductHistory } from "@/models/product";
-import type { ParsedHistoryRecord } from "@/models/history";
+import type {
+  HistoryBatchGroup, // Corrected type name
+  ParsedHistoryRecord, // Keep if used by local mode transformation
+  ProductHistory, // For local mode
+} from "@/models/history";
 import { useAuthStore } from "@/stores/authStore";
 import HistoryTable from "./history-list/HistoryTable.vue";
 import HistoryCard from "./history-list/HistoryCard.vue";
@@ -16,16 +19,11 @@ const props = defineProps<{
 const historyStore = useHistoryStore();
 const authStore = useAuthStore();
 
-const currentPage = ref(1);
-const itemsPerPage = ref(6);
+// itemsPerPage is now managed by historyStore.pageSizeForGrouped for API mode
+// For local mode, we can define a local itemsPerPage if needed, or use a fixed one.
+const localModeItemsPerPage = ref(4);
 
 // Helper functions for date filtering
-const getDateFromRecord = (
-  record: ProductHistory | ParsedHistoryRecord
-): string => {
-  return "createdAt" in record ? record.createdAt : record.date;
-};
-
 const isToday = (dateString: string): boolean => {
   const today = new Date();
   const date = new Date(dateString);
@@ -56,100 +54,252 @@ const isThisMonth = (dateString: string): boolean => {
 };
 
 // Filtra o histórico com base na opção selecionada
-const filteredHistory = computed(() => {
-  if (!historyStore.history) return [];
-
-  return historyStore.history.filter((h_record) => {
-    const recordDate = getDateFromRecord(h_record);
-    switch (props.filterOption) {
-      case "today":
-        return isToday(recordDate);
-      case "week":
-        return isThisWeek(recordDate);
-      case "month":
-        return isThisMonth(recordDate);
-      default:
-        return true;
-    }
-  });
+const filteredAndSortedBatches = computed((): HistoryBatchGroup[] => {
+  if (authStore.isLocalMode) {
+    // Use the getter that transforms local history for consistency
+    const localGroups = historyStore.getLocalModeHistoryAsGroups;
+    return localGroups
+      .filter((batch: HistoryBatchGroup) => {
+        const batchDate = batch.createdAt;
+        switch (props.filterOption) {
+          case "today":
+            return isToday(batchDate);
+          case "week":
+            return isThisWeek(batchDate);
+          case "month":
+            return isThisMonth(batchDate);
+          default:
+            return true;
+        }
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+  } else {
+    // Authenticated mode: historyStore.groupedHistory already contains paginated groups from API
+    // Client-side filtering is applied on the *current page* of batches fetched from the API.
+    if (!historyStore.groupedHistory || !historyStore.groupedHistory.groups)
+      return [];
+    return historyStore.groupedHistory.groups // Corrected: filter on groups array
+      .filter((batch: HistoryBatchGroup) => {
+        // Added type for batch
+        if (!batch.records || batch.records.length === 0) return false;
+        const batchDate = batch.createdAt;
+        switch (props.filterOption) {
+          case "today":
+            return isToday(batchDate);
+          case "week":
+            return isThisWeek(batchDate);
+          case "month":
+            return isThisMonth(batchDate);
+          default:
+            return true;
+        }
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+  }
 });
 
-// Total de páginas baseado no histórico filtrado
-const totalPages = computed(() => {
+// Pagination for local mode (since API mode pagination is handled by the store)
+const localModeCurrentPage = ref(1);
+
+const localModeTotalPages = computed(() => {
+  if (!authStore.isLocalMode) return 1;
   return Math.max(
     1,
-    Math.ceil(filteredHistory.value.length / itemsPerPage.value)
+    Math.ceil(
+      filteredAndSortedBatches.value.length / localModeItemsPerPage.value
+    )
   );
 });
 
-// Registros a serem exibidos na página atual
-const paginatedHistory = computed(() => {
-  if (currentPage.value > totalPages.value && totalPages.value > 0) {
-    // check totalPages > 0
-    currentPage.value = totalPages.value;
-  } else if (totalPages.value === 0) {
-    currentPage.value = 1; // Reset to 1 if no pages
+const paginatedBatchesToDisplay = computed(() => {
+  if (authStore.isLocalMode) {
+    if (
+      localModeCurrentPage.value > localModeTotalPages.value &&
+      localModeTotalPages.value > 0
+    ) {
+      localModeCurrentPage.value = localModeTotalPages.value;
+    } else if (localModeTotalPages.value === 0) {
+      localModeCurrentPage.value = 1;
+    }
+    const startIndex =
+      (localModeCurrentPage.value - 1) * localModeItemsPerPage.value;
+    return filteredAndSortedBatches.value.slice(
+      startIndex,
+      startIndex + localModeItemsPerPage.value
+    );
   }
-  const startIndex = (currentPage.value - 1) * itemsPerPage.value;
-  return filteredHistory.value.slice(
-    startIndex,
-    startIndex + itemsPerPage.value
-  );
+  // For API mode, filteredAndSortedBatches already represents the current page's filtered data
+  return filteredAndSortedBatches.value;
 });
 
-// Indicadores de paginação
+const currentPage = computed(() =>
+  authStore.isLocalMode
+    ? localModeCurrentPage.value
+    : historyStore.currentPageForGrouped
+);
+const totalPages = computed(() =>
+  authStore.isLocalMode
+    ? localModeTotalPages.value
+    : historyStore.groupedHistory?.totalPages || 1
+);
+
 const paginationInfo = computed(() => {
-  const total = filteredHistory.value.length;
-  if (total === 0) return { showing: false, start: 0, end: 0, total: 0 };
-  const start = Math.min(
-    (currentPage.value - 1) * itemsPerPage.value + 1,
-    total
-  );
-  const end = Math.min(currentPage.value * itemsPerPage.value, total);
-  return { showing: true, start, end, total };
+  if (authStore.isLocalMode) {
+    const total = filteredAndSortedBatches.value.length;
+    if (total === 0) return { showing: false, start: 0, end: 0, total: 0 };
+    const start = Math.min(
+      (localModeCurrentPage.value - 1) * localModeItemsPerPage.value + 1,
+      total
+    );
+    const end = Math.min(
+      localModeCurrentPage.value * localModeItemsPerPage.value,
+      total
+    );
+    return { showing: true, start, end, total };
+  } else {
+    // API Mode
+    const totalItems = historyStore.groupedHistory?.totalBatches || 0;
+    if (totalItems === 0) return { showing: false, start: 0, end: 0, total: 0 };
+
+    // If client-side filtering is active on the API-paginated data:
+    // The 'total' should ideally reflect the total *unfiltered* batches from the API for pagination controls.
+    // The 'start' and 'end' can reflect the currently *viewable* items if filtering reduces the count on the page.
+    // However, for simplicity with API pagination, we'll use the store's pagination info.
+    const pageSize = historyStore.pageSizeForGrouped;
+    const apiCurrentPage = historyStore.currentPageForGrouped;
+    const apiTotalBatches = historyStore.groupedHistory?.totalBatches || 0;
+    const start = (apiCurrentPage - 1) * pageSize + 1;
+    const end = Math.min(apiCurrentPage * pageSize, apiTotalBatches);
+
+    return {
+      showing: apiTotalBatches > 0,
+      start: Math.min(start, apiTotalBatches),
+      end: end,
+      total: apiTotalBatches,
+    };
+  }
 });
 
-// Navegar para página anterior
-function prevPage() {
-  if (currentPage.value > 1) currentPage.value--;
+function changePage(page: number) {
+  if (authStore.isLocalMode) {
+    if (page >= 1 && page <= localModeTotalPages.value) {
+      localModeCurrentPage.value = page;
+    }
+  } else {
+    historyStore.changeGroupedHistoryPage(page);
+  }
 }
 
-// Navegar para próxima página
-function nextPage() {
-  if (currentPage.value < totalPages.value) currentPage.value++;
-}
-
-// Navegar para uma página específica
-function goToPage(page: number) {
-  if (page >= 1 && page <= totalPages.value) currentPage.value = page;
-}
-
-// Reset para primeira página quando o filtro muda
 watch(
   () => props.filterOption,
   () => {
-    currentPage.value = 1;
+    if (authStore.isLocalMode) {
+      localModeCurrentPage.value = 1; // Reset local pagination on filter change
+    } else {
+      // For API mode, if filtering is purely client-side on the current page,
+      // no need to call changeGroupedHistoryPage unless we want to refetch page 1.
+      // If the API supported filtering, we would call:
+      // historyStore.fetchGroupedHistory(1, historyStore.pageSizeForGrouped, props.filterOption);
+      // For now, client-side filtering on the current API page is fine.
+      // If filteredAndSortedBatches becomes empty, it will show the empty state.
+    }
   }
 );
+
+// Função de formatação da data para exibição
+function formatBatchDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleString();
+}
 </script>
 
 <template>
   <div>
-    <!-- Componente de tabela para desktop -->
-    <HistoryTable :history="paginatedHistory" />
+    <div
+      v-if="
+        authStore.isLocalMode ? false : historyStore.isLoadingGroupedHistory
+      "
+      class="text-center p-8"
+    >
+      <!-- Loader ou indicador de carregamento pode ser adicionado aqui -->
+      <span class="material-icons-outlined animate-spin text-3xl"
+        >hourglass_empty</span
+      >
+    </div>
 
-    <!-- Componente de cards para mobile -->
-    <HistoryCard :history="paginatedHistory" />
+    <div v-else-if="paginatedBatchesToDisplay.length > 0" class="space-y-6">
+      <!-- Para cada lote de histórico -->
+      <div
+        v-for="batch in paginatedBatchesToDisplay"
+        :key="batch.batchId"
+        class="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
+      >
+        <!-- Cabeçalho do lote com data/hora -->
+        <div
+          class="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-3"
+        >
+          <h3 class="font-medium flex items-center">
+            <span class="material-icons-outlined mr-2">history</span>
+            Alterações em {{ formatBatchDate(batch.createdAt) }}
+            <span v-if="!authStore.isLocalMode" class="text-xs ml-2 opacity-75">
+              (BatchID: {{ batch.batchId.substring(0, 8) }}...)
+            </span>
+          </h3>
+        </div>
+
+        <!-- Conteúdo dos registros do lote -->
+        <div class="p-0">
+          <!-- Desktop: Componente de tabela -->
+          <HistoryTable :batch="batch" :is-local-mode="authStore.isLocalMode" />
+
+          <!-- Mobile: Componente de cards -->
+          <HistoryCard :batch="batch" :is-local-mode="authStore.isLocalMode" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Indicação de vazio -->
+    <div
+      v-else-if="
+        !(authStore.isLocalMode
+          ? false
+          : historyStore.isLoadingGroupedHistory) &&
+        paginatedBatchesToDisplay.length === 0
+      "
+      class="bg-white p-8 rounded-lg shadow-md text-center text-gray-500"
+    >
+      <div class="flex flex-col items-center">
+        <span class="material-icons-outlined text-5xl text-gray-300 mb-3"
+          >history</span
+        >
+        <p class="text-lg">Nenhum registro de histórico encontrado.</p>
+        <p class="text-sm text-gray-400">
+          Os registros aparecerão aqui quando você fizer alterações no estoque.
+        </p>
+      </div>
+    </div>
 
     <!-- Componente de paginação -->
     <HistoryPagination
-      v-if="filteredHistory.length > 0"
+      v-if="
+        !(authStore.isLocalMode
+          ? false
+          : historyStore.isLoadingGroupedHistory) &&
+        ((authStore.isLocalMode
+          ? filteredAndSortedBatches.length
+          : historyStore.groupedHistory?.totalBatches) || 0) > 0
+      "
       :current-page="currentPage"
       :total-pages="totalPages"
       :pagination-info="paginationInfo"
-      @prev-page="prevPage"
-      @next-page="nextPage"
-      @go-to-page="goToPage"
+      @prev-page="changePage(currentPage - 1)"
+      @next-page="changePage(currentPage + 1)"
+      @go-to-page="changePage"
     />
   </div>
 </template>

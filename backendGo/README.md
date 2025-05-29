@@ -12,6 +12,31 @@ Este é o backend para o sistema de Gerenciamento de Estoque, desenvolvido em Go
 - **Cron:** Para agendamento de tarefas automáticas (backups semanais).
 - **Docker:** Para containerização da aplicação.
 
+## Funcionalidades Principais
+
+- **Autenticação:** Login de usuário e verificação de token JWT.
+- **Gerenciamento de Produtos:**
+  - CRUD completo para produtos (ID, Nome, Unidade, Quantidade).
+  - A quantidade de um produto é automaticamente atualizada por um gatilho no banco de dados (PostgreSQL) para refletir a soma das quantidades de seus lotes, se houver lotes.
+- **Gerenciamento de Lotes (`product_lots`):**
+  - CRUD completo para lotes (ID, ID do Produto, Quantidade, Data de Validade).
+  - Lotes são associados a produtos. A criação, atualização ou exclusão de um lote dispara a atualização da quantidade total do produto pai.
+- **Histórico de Alterações:**
+  - Registro detalhado de todas as operações significativas (criação, atualização, exclusão de produtos e lotes).
+  - Cada registro de histórico inclui `EntityType` (product, lote), `EntityID`, `ChangeDetails` (JSON com os detalhes da mudança), `CreatedAt`, e `BatchID`.
+  - **Funcionamento do `BatchID`:**
+    - **Geração Automática pelo Backend:** Para cada operação CRUD individual (ex: criar um lote, atualizar um produto), o backend automaticamente gera um registro de histórico.
+    - **Agrupamento Iniciado pelo Cliente:** O cliente (frontend) pode gerar um UUID (ex: `X-Operation-Batch-ID`) e enviá-lo como um header HTTP em um conjunto de requisições de API (ex: múltiplas criações/atualizações de lotes e produtos feitas em uma única "transação" do usuário). O backend utilizará este `X-Operation-Batch-ID` como o `BatchID` para todos os registros de histórico gerados automaticamente por essas requisições específicas. Isso agrupa as alterações relacionadas.
+    - **Fallback:** Se nenhum `X-Operation-Batch-ID` for fornecido pelo cliente, o backend geralmente define o `BatchID` do registro de histórico como o próprio `ID` do registro de histórico, tratando-o como uma operação individual.
+    - **Endpoint de Batch Explícito (`POST /api/history/batch`):** Permite que um cliente envie um array de entradas de histórico pré-formatadas. O backend atribui um `BatchID` novo e único (gerado pelo servidor) a todas as entradas recebidas nesta requisição específica.
+  - **Endpoints de Consulta de Histórico:**
+    - `GET /api/history`: Retorna uma lista paginada de todos os registros de histórico.
+    - `GET /api/history?batch_id={id}`: Retorna todos os registros de histórico associados a um `BatchID` específico.
+    - `GET /api/history/batch/{batch_id}`: Similar ao anterior, focado em buscar um lote específico.
+    - `GET /api/history/grouped`: **Novo endpoint** que retorna o histórico agrupado por `BatchID`. Cada grupo contém o `BatchID`, a data/hora da primeira entrada do lote, e todos os registros de histórico pertencentes àquele lote. Suporta paginação baseada nos lotes (batches).
+    - `GET /api/history/{entity_type}/{entity_id}`: Retorna o histórico para uma entidade específica.
+- **Backup:** Rotina de backup semanal do banco de dados (configurável via cron).
+
 ## Estrutura do Projeto
 
 ```
@@ -170,6 +195,9 @@ O servidor estará disponível em `http://localhost:3000`.
   - Suporta query params `limit` e `offset` para paginação.
 - `POST /api/history`: Adiciona um novo registro ao histórico (requer autenticação, geralmente usado internamente pelos serviços).
 - `GET /api/history/:entity_type/:entity_id`: Lista registros de histórico para uma entidade específica (e.g., `/api/history/product/123` ou `/api/history/lote/abc`) (requer autenticação).
+- `GET /api/history?batch_id={id}`: Retorna todos os registros de histórico associados a um `BatchID` específico.
+- `GET /api/history/batch/{batch_id}`: Similar ao anterior, focado em buscar um lote específico.
+- `GET /api/history/grouped`: **Novo endpoint** que retorna o histórico agrupado por `BatchID`. Cada grupo contém o `BatchID`, a data/hora da primeira entrada do lote, e todos os registros de histórico pertencentes àquele lote. Suporta paginação baseada nos lotes (batches).
 
 ## CORS
 

@@ -28,6 +28,13 @@ watch(
   { immediate: true }
 );
 
+function adjustQuantity(amount: number) {
+  const currentQuantity = Number(editableLoteData.value.quantity) || 0;
+  let newQuantity = currentQuantity + amount;
+  newQuantity = Math.max(0.01, newQuantity); // Ensure minimum value is 0.01
+  editableLoteData.value.quantity = parseFloat(newQuantity.toFixed(2)); // Handle precision
+}
+
 function validateAndSave() {
   if (!props.lote) return;
   if (editableLoteData.value.quantity <= 0) {
@@ -64,17 +71,52 @@ function validateAndSave() {
       <div>
         <label
           for="edit-lote-quantity"
-          class="block text-sm font-medium text-gray-700"
+          class="block text-sm font-medium text-gray-700 mb-1"
           >Quantidade</label
         >
-        <input
-          id="edit-lote-quantity"
-          type="number"
-          v-model.number="editableLoteData.quantity"
-          min="0.01"
-          step="0.01"
-          class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-        />
+        <div class="flex items-center space-x-1 mt-1">
+          <button
+            type="button"
+            @click="adjustQuantity(-10)"
+            class="btn-adjust-qty"
+            aria-label="Diminuir 10 da quantidade"
+          >
+            -10
+          </button>
+          <button
+            type="button"
+            @click="adjustQuantity(-1)"
+            class="btn-adjust-qty"
+            aria-label="Diminuir 1 da quantidade"
+          >
+            -1
+          </button>
+          <input
+            id="edit-lote-quantity"
+            type="number"
+            v-model.number="editableLoteData.quantity"
+            min="0.01"
+            step="0.01"
+            class="input-qty flex-grow border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+            placeholder="0.00"
+          />
+          <button
+            type="button"
+            @click="adjustQuantity(1)"
+            class="btn-adjust-qty"
+            aria-label="Aumentar 1 na quantidade"
+          >
+            +1
+          </button>
+          <button
+            type="button"
+            @click="adjustQuantity(10)"
+            class="btn-adjust-qty"
+            aria-label="Aumentar 10 na quantidade"
+          >
+            +10
+          </button>
+        </div>
       </div>
       <div>
         <label
@@ -107,3 +149,29 @@ function validateAndSave() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.input-qty {
+  @apply text-center px-3 py-2 border rounded-md shadow-sm focus:outline-none sm:text-sm;
+  /* Allow text selection */
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+}
+
+/* Hide default number input spinners */
+.input-qty::-webkit-outer-spin-button,
+.input-qty::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.input-qty[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.btn-adjust-qty {
+  @apply px-3 py-2 border border-gray-300 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 text-sm font-medium transition-colors;
+  min-width: 40px; /* Ensure buttons have a decent tap size */
+}
+</style>

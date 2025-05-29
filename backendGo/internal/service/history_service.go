@@ -22,6 +22,7 @@ type HistoryService interface {
 	CreateRawHistoryEntry(entry models.History) error
 	CreateBatch(entries []models.History) (string, error) // New: Create batch of history entries
 	GetByBatchID(batchID string) ([]models.History, error) // New: Get entries by batch ID
+	GetGroupedHistory(page, pageSize int) (*models.PaginatedHistoryBatchGroups, error)
 }
 
 type historyService struct {
@@ -47,7 +48,8 @@ func (s *historyService) RecordChange(entityType, entityID string, changeDetails
 		Changes:    changesJSON,
 	}
 
-	// Use provided batchID if available, otherwise entry.ID will be used as default
+	// Use provided batchID if available.
+	// If not, the repository layer will default batch_id to entry.id if it's empty.
 	if len(batchID) > 0 && batchID[0] != "" {
 		entry.BatchID = batchID[0]
 	}
@@ -114,4 +116,50 @@ func (s *historyService) GetByBatchID(batchID string) ([]models.History, error) 
         return nil, fmt.Errorf("batch ID is required")
     }
     return s.repo.GetByBatchID(batchID)
+}
+
+func (s *historyService) GetGroupedHistory(page, pageSize int) (*models.PaginatedHistoryBatchGroups, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10 // Default page size for batches
+	}
+	offset := (page - 1) * pageSize
+
+	batchIDs, firstEntryDates, totalBatches, err := s.repo.GetDistinctBatchIDs(pageSize, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get distinct batch IDs: %w", err)
+	}
+
+	groups := make([]models.HistoryBatchGroup, 0, len(batchIDs))
+	for i, batchID := range batchIDs {
+		records, err := s.repo.GetByBatchID(batchID)
+		if err != nil {
+			// Log or handle error for individual batch, maybe skip this batch
+			fmt.Printf("Warning: failed to get records for batch ID %s: %v\n", batchID, err)
+			continue
+		}
+		if len(records) > 0 {
+			groups = append(groups, models.HistoryBatchGroup{
+				BatchID:     batchID,
+				CreatedAt:   firstEntryDates[i], // Use the fetched first entry date
+				Records:     records,
+				RecordCount: len(records),
+			})
+		}
+	}
+
+	totalPages := 0
+	if totalBatches > 0 {
+		totalPages = (totalBatches + pageSize - 1) / pageSize
+	}
+
+	return &models.PaginatedHistoryBatchGroups{
+		Groups:       groups,
+		TotalBatches: totalBatches,
+		Page:         page,
+		PageSize:     pageSize,
+		TotalPages:   totalPages,
+	}, nil
 }

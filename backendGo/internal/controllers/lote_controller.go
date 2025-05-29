@@ -30,6 +30,7 @@ func NewLoteController(service service.LoteService) *LoteController {
 // @Produce json
 // @Param product_id path string true "Product ID"
 // @Param lote body models.Lote true "Lote data (quantity, data_validade)"
+// @HeaderParam X-Operation-Batch-ID header string false "Optional Batch ID for grouping operations"
 // @Success 201 {object} models.Lote
 // @Failure 400 {object} gin.H{"error": "message"}
 // @Failure 404 {object} gin.H{"error": "message"} "Product not found"
@@ -39,6 +40,7 @@ func NewLoteController(service service.LoteService) *LoteController {
 func (lc *LoteController) CreateLote(c *gin.Context) {
 	productID := c.Param("product_id")
 	var loteReq models.Lote
+	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
 	if err := c.ShouldBindJSON(&loteReq); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
@@ -52,8 +54,7 @@ func (lc *LoteController) CreateLote(c *gin.Context) {
         return
     }
 
-
-	createdLote, err := lc.service.CreateLote(productID, loteReq)
+	createdLote, err := lc.service.CreateLote(productID, loteReq, operationBatchID)
 	if err != nil {
 		// Basic error type checking, can be more granular
 		if err.Error() == fmt.Sprintf("product with ID %s not found", productID) {
@@ -102,6 +103,7 @@ func (lc *LoteController) GetLotesForProduct(c *gin.Context) {
 // @Produce json
 // @Param lote_id path string true "Lote ID"
 // @Param lote body models.Lote true "Lote data to update (quantity, data_validade)"
+// @HeaderParam X-Operation-Batch-ID header string false "Optional Batch ID for grouping operations"
 // @Success 200 {object} models.Lote
 // @Failure 400 {object} gin.H{"error": "message"}
 // @Failure 404 {object} gin.H{"error": "message"} "Lote not found"
@@ -111,6 +113,7 @@ func (lc *LoteController) GetLotesForProduct(c *gin.Context) {
 func (lc *LoteController) UpdateLote(c *gin.Context) {
 	loteID := c.Param("lote_id")
 	var loteReq models.Lote
+	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
 	if err := c.ShouldBindJSON(&loteReq); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
@@ -123,7 +126,7 @@ func (lc *LoteController) UpdateLote(c *gin.Context) {
         return
     }
 
-	updatedLote, err := lc.service.UpdateLote(loteID, loteReq)
+	updatedLote, err := lc.service.UpdateLote(loteID, loteReq, operationBatchID)
 	if err != nil {
 		if err.Error() == fmt.Sprintf("lote with ID %s not found", loteID) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -146,6 +149,7 @@ func (lc *LoteController) UpdateLote(c *gin.Context) {
 // @Tags lotes
 // @Produce json
 // @Param lote_id path string true "Lote ID"
+// @HeaderParam X-Operation-Batch-ID header string false "Optional Batch ID for grouping operations"
 // @Success 200 {object} gin.H{"message": "Lote deleted successfully"}
 // @Failure 404 {object} gin.H{"error": "message"} "Lote not found"
 // @Failure 500 {object} gin.H{"error": "message"}
@@ -153,8 +157,9 @@ func (lc *LoteController) UpdateLote(c *gin.Context) {
 // @Security BearerAuth
 func (lc *LoteController) DeleteLote(c *gin.Context) {
 	loteID := c.Param("lote_id")
+	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
-	err := lc.service.DeleteLote(loteID)
+	err := lc.service.DeleteLote(loteID, operationBatchID)
 	if err != nil {
 		if err.Error() == fmt.Sprintf("lote with ID %s not found", loteID) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})

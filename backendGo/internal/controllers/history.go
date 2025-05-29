@@ -176,3 +176,38 @@ func (hc *HistoryController) GetByBatch(c *gin.Context) {
 
 	c.JSON(http.StatusOK, historyEntries)
 }
+
+// GetGrouped retrieves history entries grouped by batch ID, with pagination for batches.
+// @Summary Get history grouped by batch ID
+// @Description Retrieves history entries, grouped by their batch ID, supporting pagination for the batches.
+// @Tags history
+// @Produce json
+// @Param page query int false "Page number for batch pagination" default(1)
+// @Param pageSize query int false "Number of batches per page" default(10)
+// @Success 200 {object} models.PaginatedHistoryBatchGroups
+// @Failure 400 {object} gin.H{"error": "string"} "Invalid query parameters"
+// @Failure 500 {object} gin.H{"error": "string"}
+// @Router /api/history/grouped [get]
+// @Security BearerAuth
+func (hc *HistoryController) GetGrouped(c *gin.Context) {
+	pageQuery := c.DefaultQuery("page", "1")
+	pageSizeQuery := c.DefaultQuery("pageSize", "10")
+
+	page, err := strconv.Atoi(pageQuery)
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(pageSizeQuery)
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	paginatedGroups, err := hc.service.GetGroupedHistory(page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch grouped history: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, paginatedGroups)
+}

@@ -30,4 +30,5 @@ export interface ProductHistory {
   id: string;
   date: string;
   changes: ProductChange[];
+  batchId?: string; // Added batchId property
 }

@@ -76,6 +76,7 @@ func (pc *ProductController) GetByID(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param product body models.Product true "Product data (ID is optional, will be generated if empty; Quantity is initial, will be managed by lotes if lotes are added)"
+// @HeaderParam X-Operation-Batch-ID header string false "Optional Batch ID for grouping operations"
 // @Success 201 {object} models.Product
 // @Failure 400 {object} gin.H{"error": "message"}
 // @Failure 500 {object} gin.H{"error": "message"}
@@ -83,6 +84,8 @@ func (pc *ProductController) GetByID(c *gin.Context) {
 // @Security BearerAuth
 func (pc *ProductController) Create(c *gin.Context) {
 	var product models.Product
+	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
+
 	if err := c.ShouldBindJSON(&product); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product data: " + err.Error()})
 		return
@@ -105,7 +108,7 @@ func (pc *ProductController) Create(c *gin.Context) {
 		QuantityAfter:  product.Quantity,
 		IsNewProduct:   true,
 	}
-	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, product.ID, changeDetail); err != nil {
+	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, product.ID, changeDetail, operationBatchID); err != nil {
 		// Log or handle history recording error, but don't fail the main operation
 	}
 
@@ -125,6 +128,7 @@ func (pc *ProductController) Create(c *gin.Context) {
 // @Produce json
 // @Param product_id path string true "Product ID"
 // @Param product body models.Product true "Product data to update (name, unit)"
+// @HeaderParam X-Operation-Batch-ID header string false "Optional Batch ID for grouping operations"
 // @Success 200 {object} models.Product
 // @Failure 400 {object} gin.H{"error": "message"}
 // @Failure 404 {object} gin.H{"error": "message"} "Product not found"
@@ -134,6 +138,8 @@ func (pc *ProductController) Create(c *gin.Context) {
 func (pc *ProductController) Update(c *gin.Context) {
 	productID := c.Param("product_id") // Changed from "id"
 	var productUpdates models.Product
+	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
+
 	if err := c.ShouldBindJSON(&productUpdates); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product data: " + err.Error()})
 		return
@@ -167,7 +173,7 @@ func (pc *ProductController) Update(c *gin.Context) {
 			Action:        "updated",
 			// Add more details if needed, e.g., old name/unit
 		}
-		if err := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail); err != nil {
+		if err := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail, operationBatchID); err != nil {
 			// Log or handle history recording error
 		}
 	}
@@ -186,6 +192,7 @@ func (pc *ProductController) Update(c *gin.Context) {
 // @Tags products
 // @Produce json
 // @Param product_id path string true "Product ID"
+// @HeaderParam X-Operation-Batch-ID header string false "Optional Batch ID for grouping operations"
 // @Success 200 {object} gin.H{"message": "Product deleted successfully"}
 // @Failure 404 {object} gin.H{"error": "message"} "Product not found"
 // @Failure 500 {object} gin.H{"error": "message"}
@@ -193,6 +200,7 @@ func (pc *ProductController) Update(c *gin.Context) {
 // @Security BearerAuth
 func (pc *ProductController) Delete(c *gin.Context) {
 	productID := c.Param("product_id") // Changed from "id"
+	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
 	existingProduct, err := pc.repo.GetByID(productID)
     if err != nil {
@@ -217,7 +225,7 @@ func (pc *ProductController) Delete(c *gin.Context) {
 		QuantityBefore:   existingProduct.Quantity, // Quantity before deletion (sum of its lotes)
 		IsProductRemoval: true,
 	}
-	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail); err != nil {
+	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail, operationBatchID); err != nil {
 		// Log or handle history recording error
 	}
 

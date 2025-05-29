@@ -1,19 +1,18 @@
 <script setup lang="ts">
 const props = defineProps<{
   quantity: number;
+  disabled?: boolean; // Keep disabled prop in case it's used for display-only elsewhere
 }>();
 
 const emit = defineEmits<{
-  (e: "updateQuantity", value: number): void;
-  (e: "changeQuantity", delta: number): void;
+  (e: "updateQuantity", value: number): void; // For direct input changes
 }>();
 
-function updateQuantity(value: number) {
-  emit("updateQuantity", value);
-}
-
-function changeQuantity(delta: number) {
-  emit("changeQuantity", delta);
+function handleInput(event: Event) {
+  const value = parseFloat((event.target as HTMLInputElement).value);
+  if (!isNaN(value)) {
+    emit("updateQuantity", Math.max(0, value));
+  }
 }
 </script>
 
@@ -23,27 +22,11 @@ function changeQuantity(delta: number) {
       type="number"
       min="0"
       :value="quantity"
-      @input="
-        updateQuantity(parseFloat(($event.target as HTMLInputElement).value))
-      "
+      @input="handleInput"
       class="w-28 input-field-enhanced text-center"
+      :disabled="props.disabled"
     />
-    <div class="flex space-x-1 mt-2">
-      <button @click="changeQuantity(-10)" class="btn-qty-enhanced">-10</button>
-      <button @click="changeQuantity(-1)" class="btn-qty-enhanced">-1</button>
-      <button
-        @click="changeQuantity(1)"
-        class="btn-qty-enhanced bg-emerald-500/90 hover:bg-emerald-600"
-      >
-        +1
-      </button>
-      <button
-        @click="changeQuantity(10)"
-        class="btn-qty-enhanced bg-emerald-500/90 hover:bg-emerald-600"
-      >
-        +10
-      </button>
-    </div>
+    <!-- Buttons removed -->
   </div>
 </template>
 
@@ -51,7 +34,8 @@ function changeQuantity(delta: number) {
 .input-field-enhanced {
   @apply px-3 py-2 border border-indigo-300 rounded text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow;
 }
-.btn-qty-enhanced {
-  @apply px-2 py-1 bg-red-500/90 hover:bg-red-600 text-white rounded font-bold shadow-sm hover:shadow transition-all;
+.input-field-enhanced:disabled {
+  @apply bg-gray-100 cursor-not-allowed;
 }
+/* Button styles removed */
 </style>

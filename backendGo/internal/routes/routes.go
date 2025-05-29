@@ -73,6 +73,7 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config) {
 			// New batch endpoints
 			history.POST("/batch", middleware.AuthMiddleware(cfg), historyController.CreateBatch)
 			history.GET("/batch/:batch_id", middleware.AuthMiddleware(cfg), historyController.GetByBatch)
+			history.GET("/grouped", middleware.AuthMiddleware(cfg), historyController.GetGrouped) // New route
 		}
 	}
 }

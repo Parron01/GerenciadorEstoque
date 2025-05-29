@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -15,8 +16,45 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres" // Driver for postgres
 	_ "github.com/golang-migrate/migrate/v4/source/file"       // Driver for file source
+	_ "github.com/lib/pq"
 	"github.com/robfig/cron/v3"
 )
+
+func waitForDB(cfg *config.Config) error {
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		cfg.DBConfig.User,
+		cfg.DBConfig.Password,
+		cfg.DBConfig.Host,
+		cfg.DBConfig.Port,
+		cfg.DBConfig.DBName,
+	)
+
+	log.Printf("Tentando conectar ao banco de dados em %s:%s", cfg.DBConfig.Host, cfg.DBConfig.Port)
+
+	maxRetries := 30
+	retryInterval := 2 * time.Second
+
+	for i := 0; i < maxRetries; i++ {
+		db, err := sql.Open("postgres", dsn)
+		if err == nil {
+			err = db.Ping()
+			if err == nil {
+				log.Printf("Conexão com banco de dados estabelecida após %d tentativas", i+1)
+				db.Close()
+				return nil
+			}
+		}
+
+		if i < maxRetries-1 {
+			log.Printf("Tentativa %d falhou: %v. Tentando novamente em %v...", i+1, err, retryInterval)
+			time.Sleep(retryInterval)
+		} else {
+			return fmt.Errorf("não foi possível conectar ao banco de dados após %d tentativas: %v", maxRetries, err)
+		}
+	}
+
+	return nil
+}
 
 func runMigrations(cfg *config.Config) {
 	migrationPath := "file://migrations" // Correct: resolves to ./migrations relative to workdir
@@ -55,6 +93,11 @@ func main() {
 	}
 	fmt.Printf("Servidor rodando em modo: %s\n", os.Getenv("GO_ENV"))
 
+	// Wait for database to be ready
+	if err := waitForDB(cfg); err != nil {
+		log.Fatalf("Falha ao aguardar o banco de dados: %v", err)
+	}
+
 	// Run database migrations before initializing DB for the app
 	// This is important if InitDB relies on tables being present
 	// Note: The DB connection for migrations is separate from database.DB for now.
@@ -71,9 +114,9 @@ func main() {
 
 	// Setup CORS
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
+		AllowOrigins:     []string{"*"}, // For development. In production, specify your frontend origin.
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Operation-Batch-ID"}, // Added X-Operation-Batch-ID
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,

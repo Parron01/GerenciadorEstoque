@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --force",
+    "dev:clean": "vite --force --clearCache",
     "build": "vue-tsc --build && vite build",
     "preview": "vite preview",
     "lint": "eslint . --fix",

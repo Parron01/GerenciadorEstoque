@@ -4,6 +4,9 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
+# Instale dependências de compilação
+RUN apk add --no-cache git
+
 # Copy go.mod and go.sum first to leverage Docker cache
 COPY go.mod go.sum ./
 RUN go mod download
@@ -19,7 +22,14 @@ RUN go build -o /app/server cmd/server/main.go
 # Stage 2: Final image
 FROM alpine:latest
 
+# Instalar ferramentas necessárias
+RUN apk add --no-cache postgresql-client ca-certificates tzdata bash curl
+
 WORKDIR /app
+
+# Criar um script de espera pelo banco de dados
+COPY --from=builder /app/scripts/wait-for-db.sh ./wait-for-db.sh
+RUN chmod +x ./wait-for-db.sh
 
 # Copy migrations from the builder stage
 # This ensures migrations are in the image at /app/migrations
@@ -30,6 +40,9 @@ COPY --from=builder /app/server .
 
 # Expose port (must match .env and docker-compose.yml)
 EXPOSE 3000
+
+# Use o script de espera como entrypoint
+ENTRYPOINT ["./wait-for-db.sh"]
 
 # Command to run the executable
 # The Go application (/app/server) handles running migrations internally via main.go
