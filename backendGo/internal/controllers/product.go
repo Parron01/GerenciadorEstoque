@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/Parron01/GerenciadorEstoque/backendGo/internal/models"
@@ -101,11 +102,13 @@ func (pc *ProductController) Create(c *gin.Context) {
 		return
 	}
 
+	// Correctly assign pointer for QuantityAfter
+	qtyAfter := product.Quantity 
 	changeDetail := models.ProductChange{
 		ProductID:      product.ID,
 		ProductName:    product.Name,
 		Action:         "created",
-		QuantityAfter:  product.Quantity,
+		QuantityAfter:  &qtyAfter, // Assign address of qtyAfter
 		IsNewProduct:   true,
 	}
 	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, product.ID, changeDetail, operationBatchID); err != nil {
@@ -137,15 +140,18 @@ func (pc *ProductController) Create(c *gin.Context) {
 // @Security BearerAuth
 func (pc *ProductController) Update(c *gin.Context) {
 	productID := c.Param("product_id") // Changed from "id"
-	var productUpdates models.Product
+	// Use a struct with pointers to distinguish between omitted fields and empty strings
+	var payload struct {
+		Name *string `json:"name"`
+		Unit *string `json:"unit"`
+		// Quantity is not updated here, it's managed by lotes or a separate mechanism
+	}
 	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
-	if err := c.ShouldBindJSON(&productUpdates); err != nil {
+	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product data: " + err.Error()})
 		return
 	}
-
-	productUpdates.ID = productID
 
 	existingProduct, err := pc.repo.GetByID(productID)
 	if err != nil {
@@ -157,33 +163,72 @@ func (pc *ProductController) Update(c *gin.Context) {
 		return
 	}
 
-	originalName := existingProduct.Name
-	originalUnit := existingProduct.Unit
+	productToUpdate := *existingProduct // Start with existing data
+	madeChanges := false
 
-	err = pc.repo.Update(&productUpdates)
+	var changedFields []models.ChangedField
+
+	if payload.Name != nil {
+		if *payload.Name == "" {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Product name cannot be empty"})
+            return
+        }
+		if productToUpdate.Name != *payload.Name {
+			changedFields = append(changedFields, models.ChangedField{Field: "name", OldValue: productToUpdate.Name, NewValue: *payload.Name})
+			productToUpdate.Name = *payload.Name
+			madeChanges = true
+		}
+	}
+
+	if payload.Unit != nil {
+		if *payload.Unit != "L" && *payload.Unit != "kg" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit value. Must be 'L' or 'kg'."})
+			return
+		}
+		if productToUpdate.Unit != *payload.Unit {
+			changedFields = append(changedFields, models.ChangedField{Field: "unit", OldValue: productToUpdate.Unit, NewValue: *payload.Unit})
+			productToUpdate.Unit = *payload.Unit
+			madeChanges = true
+		}
+	}
+
+	if !madeChanges {
+		c.JSON(http.StatusOK, existingProduct) // No changes, return existing
+		return
+	}
+	
+	// Ensure productToUpdate.Quantity is not inadvertently changed by this endpoint
+	// It should retain existingProduct.Quantity as this endpoint only handles name/unit.
+	// The repository's Update method should be specific about which fields it updates.
+	// For safety, explicitly set it if there's any doubt:
+	productToUpdate.Quantity = existingProduct.Quantity
+
+
+	err = pc.repo.Update(&productToUpdate) // Pass the selectively updated product
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update product: " + err.Error()})
 		return
 	}
 
-	if originalName != productUpdates.Name || originalUnit != productUpdates.Unit {
+	if len(changedFields) > 0 {
 		changeDetail := models.ProductChange{
 			ProductID:     productID,
-			ProductName:   productUpdates.Name,
-			Action:        "updated",
-			// Add more details if needed, e.g., old name/unit
+			ProductName:   productToUpdate.Name, // Use the final name for context
+			Action:        "product_details_updated",
+			ChangedFields: changedFields,
 		}
-		if err := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail, operationBatchID); err != nil {
-			// Log or handle history recording error
+		if histErr := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail, operationBatchID); histErr != nil {
+			log.Printf("WARN: Failed to record history for product update %s: %v", productID, histErr)
 		}
 	}
 
-	updatedProduct, fetchErr := pc.repo.GetByID(productID)
-    if fetchErr != nil {
-        c.JSON(http.StatusOK, productUpdates) // Fallback
-        return
-    }
-	c.JSON(http.StatusOK, updatedProduct)
+	finalUpdatedProduct, fetchErr := pc.repo.GetByID(productID)
+	if fetchErr != nil {
+		log.Printf("WARN: Failed to fetch product %s after update, returning potentially stale data: %v", productID, fetchErr)
+		c.JSON(http.StatusOK, productToUpdate) // Fallback
+		return
+	}
+	c.JSON(http.StatusOK, finalUpdatedProduct)
 }
 
 // Delete removes a product
@@ -218,11 +263,13 @@ func (pc *ProductController) Delete(c *gin.Context) {
 		return
 	}
 
+	// Correctly assign pointer for QuantityBefore
+	qtyBefore := existingProduct.Quantity
 	changeDetail := models.ProductChange{
 		ProductID:        productID,
 		ProductName:      existingProduct.Name,
 		Action:           "deleted",
-		QuantityBefore:   existingProduct.Quantity, // Quantity before deletion (sum of its lotes)
+		QuantityBefore:   &qtyBefore, // Assign address of qtyBefore
 		IsProductRemoval: true,
 	}
 	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail, operationBatchID); err != nil {

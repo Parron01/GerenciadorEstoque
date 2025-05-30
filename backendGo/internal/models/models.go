@@ -41,14 +41,27 @@ type History struct {
     EntityID   string          `json:"entityId" db:"entity_id"`
     Changes    json.RawMessage `json:"changes" db:"changes"` // Storing as raw JSON
     BatchID    string          `json:"batchId" db:"batch_id"` // New field for grouping history entries
+    // New fields for context - these are populated by the service, not directly from history table
+    ProductNameContext          string   `json:"productNameContext,omitempty"`
+    ProductCurrentTotalQuantity *float64 `json:"productCurrentTotalQuantity,omitempty"`
+}
+
+// ProductBatchSummary holds aggregated quantity information for a product within a specific batch.
+type ProductBatchSummary struct {
+	ProductID                string  `json:"productId"`
+	ProductName              string  `json:"productName"`
+	TotalQuantityBeforeBatch float64 `json:"totalQuantityBeforeBatch"`
+	TotalQuantityAfterBatch  float64 `json:"totalQuantityAfterBatch"`
+	NetQuantityChangeInBatch float64 `json:"netQuantityChangeInBatch"`
 }
 
 // HistoryBatchGroup represents a collection of history records for a single batch operation.
 type HistoryBatchGroup struct {
-	BatchID     string    `json:"batchId"`
-	CreatedAt   string    `json:"createdAt"` // Timestamp of the first entry in the batch, for ordering
-	Records     []History `json:"records"`
-	RecordCount int       `json:"recordCount"`
+	BatchID          string                         `json:"batchId"`
+	CreatedAt        string                         `json:"createdAt"` // Timestamp of the first entry in the batch, for ordering
+	Records          []History                      `json:"records"`
+	RecordCount      int                            `json:"recordCount"`
+	ProductSummaries map[string]ProductBatchSummary `json:"productSummaries,omitempty"` // Key: ProductID
 }
 
 // PaginatedHistoryBatchGroups represents a paginated response for grouped history.
@@ -69,21 +82,33 @@ type LoginRequest struct {
 // LoginResponse represents the response after a successful login
 type LoginResponse struct {
     Token string `json:"token"`
+    User  User   `json:"user"` // Include user details in login response
+}
+
+// ChangedField stores details about a single field that was altered.
+type ChangedField struct {
+	Field    string      `json:"field"`
+	OldValue interface{} `json:"oldValue,omitempty"`
+	NewValue interface{} `json:"newValue,omitempty"`
+	LoteID   string      `json:"loteId,omitempty"` // Optional: If the change is specific to a lote within a product context
 }
 
 // ProductChange matches the ProductChange interface from the Node.js backend
+// It's used as the structure for the 'changes' JSON in the History model when EntityType is 'product'.
 type ProductChange struct {
-    ProductID       string  `json:"productId"`
-    ProductName     string  `json:"productName"`
-    Action          string  `json:"action"`
-    QuantityChanged float64 `json:"quantityChanged"`
-    QuantityBefore  float64 `json:"quantityBefore"`
-    QuantityAfter   float64 `json:"quantityAfter"`
-    IsNewProduct    bool    `json:"isNewProduct,omitempty"`
-    IsProductRemoval bool   `json:"isProductRemoval,omitempty"`
+	ProductID        string         `json:"productId,omitempty"` // ID of the product affected
+	ProductName      string         `json:"productName,omitempty"` // Name of the product for context
+	Action           string         `json:"action"`                // e.g., "created", "deleted", "quantity_updated", "details_updated"
+	QuantityChanged  *float64       `json:"quantityChanged,omitempty"`
+	QuantityBefore   *float64       `json:"quantityBefore,omitempty"`
+	QuantityAfter    *float64       `json:"quantityAfter,omitempty"`
+	IsNewProduct     bool           `json:"isNewProduct,omitempty"`
+	IsProductRemoval bool           `json:"isProductRemoval,omitempty"`
+	ChangedFields    []ChangedField `json:"changedFields,omitempty"` // Detailed list of fields that changed
 }
 
-// LoteChangeDetail describes changes made to a Lote for history records
+// LoteChangeDetails describes changes made to a Lote for history records
+// It's used as the structure for the 'changes' JSON in the History model when EntityType is 'lote'.
 type LoteChangeDetail struct {
 	LoteID          string    `json:"loteId"`
 	ProductID       string    `json:"productId"`

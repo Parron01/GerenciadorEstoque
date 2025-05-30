@@ -2,377 +2,598 @@
 import type { ProductHistory, ProductChange } from "@/models/product";
 import type {
   ParsedHistoryRecord,
-  HistoryBatchGroup, // Corrected type name
+  HistoryBatchGroup,
+  ProductSummaryForBatch,
 } from "@/models/history";
 import type { LoteChangeDetails } from "@/models/lote";
+import { ref, computed } from "vue";
+import {
+  formatActionName,
+  formatId,
+  getActionColorClass,
+  getActionBadgeClass,
+  getQuantityChangeClass,
+  formatQuantityChange,
+  formatDateOnly, // Import the new function
+} from "@/utils/formatters";
 
 const props = defineProps<{
   batch:
-    | HistoryBatchGroup // Corrected type name
-    | { batchId: string; createdAt: string; records: any[] }; // Keep local mode flexible
+    | HistoryBatchGroup
+    | {
+        batchId: string;
+        createdAt: string;
+        records: any[];
+        productSummaries?: Record<string, ProductSummaryForBatch>;
+      };
   isLocalMode: boolean;
 }>();
 
-function formatDateForDisplay(dateStr: string): string {
-  return new Date(dateStr).toLocaleString();
+// Track which products are expanded
+const expandedProducts = ref<Record<string, boolean>>({});
+
+// Toggle product expansion
+function toggleProduct(productId: string) {
+  expandedProducts.value[productId] = !expandedProducts.value[productId];
 }
 
-// Type guards
-function isParsedHistoryRecord(record: any): record is ParsedHistoryRecord {
-  return (
-    record &&
-    typeof record.entityType === "string" &&
-    typeof record.entityId === "string"
-  );
-}
+// Group records by product for better organization
+const recordsByProduct = computed(() => {
+  const grouped: Record<string, any[]> = {};
 
-function isProductHistory(record: any): record is ProductHistory {
-  return (
-    record && Array.isArray(record.changes) && typeof record.date === "string"
-  );
-}
+  if (!props.batch.records) return grouped;
 
-// Helper function to safely access productName
-function safeGetProductName(record: any): string {
-  if (!record || !record.details) return "Unknown";
+  // First group by product
+  props.batch.records.forEach((record) => {
+    let productId;
 
-  // Check if it's a product record
-  if (record.entityType === "product" && record.details) {
-    return (
-      (record.details as ProductChange).productName ||
-      record.entityId ||
-      "Unknown"
-    );
+    if (record.entityType === "product") {
+      productId = record.entityId;
+    } else if (record.entityType === "lote" && record.details) {
+      // For lote records, get the product ID from details or context
+      productId =
+        record.details.productId ||
+        (record.productNameContext ? record.entityId : "unknown");
+    }
+
+    if (!productId) return;
+
+    if (!grouped[productId]) {
+      grouped[productId] = [];
+    }
+
+    grouped[productId].push(record);
+  });
+
+  return grouped;
+});
+
+// Get all unique product IDs from the batch
+const productIds = computed(() => {
+  return Object.keys(recordsByProduct.value);
+});
+
+// Helper function to safely access product name
+function getProductName(productId: string): string {
+  // First check product summaries
+  if (props.batch.productSummaries && props.batch.productSummaries[productId]) {
+    return props.batch.productSummaries[productId].productName;
   }
 
-  // For other types or when missing data
-  return record.productNameContext || record.entityId || "Unknown";
+  // Otherwise try to find it in records
+  const records = recordsByProduct.value[productId] || [];
+  for (const record of records) {
+    if (record.entityType === "product" && record.details?.productName) {
+      return record.details.productName;
+    }
+    if (record.productNameContext) {
+      return record.productNameContext;
+    }
+  }
+
+  return `Produto ${formatId(productId)}`;
 }
 
-// Helper function to safely get action class
-function getActionClass(record: any, actionType: string): string {
-  if (!record || !record.details) return "";
+// Helper function to get current product quantity
+function getProductCurrentQuantity(productId: string): number | null {
+  // First check product summaries for after-batch quantity
+  if (props.batch.productSummaries && props.batch.productSummaries[productId]) {
+    return props.batch.productSummaries[productId].totalQuantityAfterBatch;
+  }
 
-  const action = (record.details.action || "").toLowerCase();
+  // Otherwise try to find it in records
+  const records = recordsByProduct.value[productId] || [];
+  for (const record of records) {
+    if (record.productCurrentTotalQuantity !== undefined) {
+      return record.productCurrentTotalQuantity;
+    }
+  }
 
-  if (actionType === "green" && ["add", "created"].includes(action)) {
-    return "text-green-700";
-  } else if (actionType === "red" && ["remove", "deleted"].includes(action)) {
-    return "text-red-700";
-  } else if (
-    actionType === "amber" &&
-    ["update", "updated", "product_details_updated"].includes(action)
+  return null;
+}
+
+// Helper to determine what kind of field change this is
+function getFieldChangeType(field: any): { icon: string; colorClass: string } {
+  if (!field || !field.field)
+    return { icon: "error", colorClass: "text-gray-500" };
+
+  const fieldName = field.field.toLowerCase();
+
+  if (fieldName.includes("name")) {
+    return { icon: "edit", colorClass: "text-blue-600" };
+  }
+  if (fieldName.includes("unit")) {
+    return { icon: "straighten", colorClass: "text-purple-600" };
+  }
+  if (fieldName.includes("quantity")) {
+    return { icon: "inventory", colorClass: "text-amber-600" };
+  }
+  if (
+    fieldName.includes("data") ||
+    fieldName.includes("date") ||
+    fieldName.includes("validade")
   ) {
-    return "text-amber-700";
+    return { icon: "event", colorClass: "text-green-600" };
   }
 
-  return "";
+  return { icon: "settings", colorClass: "text-gray-600" };
 }
 
-// Helper function for safely accessing quantity properties
-function safeQuantityBefore(record: any): any {
-  return record?.details?.quantityBefore;
+// Get icon for record type
+function getRecordTypeIcon(record: any): string {
+  if (!record || !record.entityType) return "question_mark";
+
+  if (record.entityType === "product") {
+    return "inventory_2";
+  }
+  if (record.entityType === "lote") {
+    return "inventory";
+  }
+
+  return "article";
 }
 
-function safeQuantityAfter(record: any): any {
-  return record?.details?.quantityAfter;
-}
+function getChangeIcon(action: string): string {
+  if (!action) return "help";
 
-function safeQuantityChanged(record: any): any {
-  return record?.details?.quantityChanged;
-}
+  const actionLower = action.toLowerCase();
+  if (actionLower.includes("creat") || actionLower.includes("add")) {
+    return "add_circle";
+  }
+  if (actionLower.includes("delet") || actionLower.includes("remov")) {
+    return "delete";
+  }
+  if (actionLower.includes("updat")) {
+    return "edit";
+  }
 
-// Helper function for lote details
-function safeLoteDetails(record: any): any {
-  if (!record || !record.details) return {};
-  return record.details;
-}
-
-// Helper function for action name
-function getActionName(record: any): string {
-  if (!record || !record.details) return "unknown";
-  return ((record.details.action || "unknown") + "").replace("_", " ");
+  return "change_circle";
 }
 </script>
 
 <template>
   <div class="hidden sm:block">
+    <!-- Product summaries are now integrated into each product's expanded section -->
+
+    <!-- Group records by product -->
     <table class="min-w-full bg-white">
       <thead class="bg-slate-100 text-left text-gray-700">
         <tr>
-          <th class="p-3 w-1/4">Entidade</th>
-          <th class="p-3">Detalhes da Alteração</th>
+          <th class="p-3 w-16"></th>
+          <th class="p-3">Produto</th>
+          <th class="p-3 text-right">Alterações</th>
         </tr>
       </thead>
       <tbody>
-        <!-- Para registros no modo autenticado -->
-        <template v-if="!isLocalMode && batch.records">
+        <!-- Loop through product groups instead of individual records -->
+        <template v-for="productId in productIds" :key="productId">
+          <!-- Product header row (always visible) -->
           <tr
-            v-for="record in batch.records"
-            :key="record.id"
-            class="border-b border-gray-200 hover:bg-gray-50"
+            class="border-b border-gray-200 hover:bg-gray-50 cursor-pointer"
+            :class="{ 'bg-indigo-50': expandedProducts[productId] }"
+            @click="toggleProduct(productId)"
           >
-            <td class="p-3 align-top">
-              <div class="font-medium">
-                {{ record.entityType === "product" ? "Produto" : "Lote" }}:
-              </div>
-              <div
-                v-if="record.entityType === 'product'"
-                class="text-sm text-gray-600"
+            <td class="p-3 text-center">
+              <span
+                class="material-icons-outlined text-indigo-600 transition-transform duration-200"
+                :class="{ 'rotate-90': expandedProducts[productId] }"
               >
-                {{ safeGetProductName(record) }}
-              </div>
-              <div v-else class="text-sm text-gray-600">
-                ID: {{ record.entityId.substring(0, 8) }}...
-                <div
-                  v-if="record.productNameContext"
-                  class="text-xs text-gray-500"
-                >
-                  Produto: {{ record.productNameContext }}
-                </div>
-              </div>
+                chevron_right
+              </span>
             </td>
             <td class="p-3">
-              <!-- Detalhes do produto -->
-              <div
-                v-if="record.entityType === 'product' && record.details"
-                class="border-l-2 pl-3 border-blue-500"
-              >
-                <div class="flex items-center">
-                  <span
-                    :class="{
-                      'text-green-700': getActionClass(record, 'green'),
-                      'text-red-700': getActionClass(record, 'red'),
-                      'text-amber-700': getActionClass(record, 'amber'),
-                    }"
-                    class="font-medium"
-                  >
-                    {{ getActionName(record) }}
-                  </span>
-                </div>
-                <!-- Quantidade alterada se aplicável -->
-                <div
-                  v-if="safeQuantityBefore(record) !== undefined"
-                  class="text-sm text-gray-600"
+              <div class="font-medium flex items-center text-indigo-700">
+                <span class="material-icons-outlined mr-1.5 text-indigo-500"
+                  >inventory_2</span
                 >
-                  Qtd: {{ safeQuantityBefore(record) }} →
-                  {{ safeQuantityAfter(record) }}
-                  <span v-if="safeQuantityChanged(record)">
+                {{ getProductName(productId) }}
+                <span class="text-xs text-gray-500 ml-2"
+                  >(ID: {{ formatId(productId) }})</span
+                >
+              </div>
+
+              <div class="text-sm text-gray-600 mt-0.5">
+                <template v-if="getProductCurrentQuantity(productId) !== null">
+                  Quantidade atual:
+                  <span class="font-medium">{{
+                    getProductCurrentQuantity(productId)?.toFixed(2)
+                  }}</span>
+                </template>
+
+                <!-- Show quantity change if available in product summary -->
+                <template
+                  v-if="
+                    batch.productSummaries &&
+                    batch.productSummaries[productId] &&
+                    batch.productSummaries[productId]
+                      .netQuantityChangeInBatch !== 0
+                  "
+                >
+                  <span
+                    :class="
+                      getQuantityChangeClass(
+                        batch.productSummaries[productId]
+                          .netQuantityChangeInBatch
+                      )
+                    "
+                    class="ml-2 font-medium"
+                  >
                     ({{
-                      (record.details.action === "add" ? "+" : "-") +
-                      safeQuantityChanged(record)
+                      formatQuantityChange(
+                        batch.productSummaries[productId]
+                          .netQuantityChangeInBatch
+                      )
                     }})
                   </span>
-                </div>
-                <!-- Campos alterados -->
-                <div
-                  v-if="
-                    record.entityType === 'product' &&
-                    typeof (record.details as ProductChange).changedFields ===
-                      'object' &&
-                    Array.isArray(
-                      (record.details as ProductChange).changedFields
-                    ) &&
-                    (record.details as ProductChange).changedFields!.length > 0
-                  "
-                  class="mt-1 text-sm space-y-1"
-                >
-                  <div
-                    v-for="(field, idx) in (record.details as ProductChange)
-                      .changedFields"
-                    :key="idx"
-                    class="text-gray-600"
-                  >
-                    <span class="font-medium"
-                      >{{ field.field.replace("_", " ") }}:</span
-                    >
-                    {{ field.oldValue }} → {{ field.newValue }}
-                  </div>
-                </div>
-                <!-- Tags especiais -->
-                <div class="mt-1 space-x-1">
-                  <span
-                    v-if="(record.details as ProductChange).isNewProduct"
-                    class="inline-block px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full"
-                    >Novo Produto</span
-                  >
-                  <span
-                    v-if="(record.details as ProductChange).isProductRemoval"
-                    class="inline-block px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full"
-                    >Produto Removido</span
-                  >
-                </div>
+                </template>
               </div>
-
-              <!-- Detalhes do lote -->
-              <div
-                v-else-if="record.entityType === 'lote'"
-                class="border-l-2 pl-3 border-purple-500"
-              >
-                <div class="flex items-center">
-                  <span
-                    :class="{
-                      'text-green-700':
-                        (record.details as LoteChangeDetails).action ===
-                        'created',
-                      'text-red-700':
-                        (record.details as LoteChangeDetails).action ===
-                        'deleted',
-                      'text-amber-700':
-                        (record.details as LoteChangeDetails).action ===
-                        'updated',
-                    }"
-                    class="font-medium"
-                  >
-                    {{ (record.details as LoteChangeDetails).action }}
-                  </span>
-                </div>
-                <!-- Quantidade do lote -->
-                <div class="text-sm text-gray-600 space-y-1">
-                  <div
-                    v-if="safeLoteDetails(record).quantityBefore !== undefined"
-                  >
-                    Qtd:
-                    {{ safeLoteDetails(record).quantityBefore }} →
-                    {{ safeLoteDetails(record).quantityAfter }}
-                  </div>
-                  <!-- Data de validade -->
-                  <div
-                    v-if="
-                      (record.details as LoteChangeDetails).dataValidadeOld ||
-                      (record.details as LoteChangeDetails).dataValidadeNew
-                    "
-                  >
-                    Validade:
-                    {{
-                      (record.details as LoteChangeDetails).dataValidadeOld ||
-                      "N/A"
-                    }}
-                    →
-                    {{
-                      (record.details as LoteChangeDetails).dataValidadeNew ||
-                      (record.details as LoteChangeDetails).dataValidade ||
-                      "N/A"
-                    }}
-                  </div>
-                  <div
-                    v-else-if="
-                      (record.details as LoteChangeDetails).dataValidade
-                    "
-                  >
-                    Validade:
-                    {{ (record.details as LoteChangeDetails).dataValidade }}
-                  </div>
-                </div>
+            </td>
+            <td class="p-3 text-right">
+              <div class="flex justify-end items-center space-x-1">
+                <!-- Count of operations for this product -->
+                <span
+                  class="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded-full"
+                >
+                  {{ recordsByProduct[productId].length }} operações
+                </span>
               </div>
             </td>
           </tr>
-        </template>
 
-        <!-- Para registros do modo local (ProductHistory) -->
-        <template v-else>
-          <tr
-            v-for="(record, index) in batch.records"
-            :key="index"
-            class="border-b border-gray-200 hover:bg-gray-50"
-          >
-            <td class="p-3" colspan="2">
-              <div v-if="isProductHistory(record)" class="space-y-3">
-                <div
-                  v-for="(change, changeIndex) in record.changes"
-                  :key="changeIndex"
-                  class="flex flex-wrap items-start border-l-2 pl-3 relative"
-                  :class="{
-                    'border-green-500':
-                      change.action === 'add' || change.action === 'created',
-                    'border-red-500':
-                      change.action === 'remove' || change.action === 'deleted',
-                    'border-amber-500':
-                      change.action === 'update' ||
-                      change.action === 'updated' ||
-                      change.action === 'product_details_updated',
-                  }"
-                >
-                  <!-- Cabeçalho da mudança -->
-                  <div class="w-full mb-1">
-                    <span class="font-medium mr-2">{{
-                      change.productName
-                    }}</span>
-                    <span
-                      :class="{
-                        'bg-green-100 text-green-800':
-                          change.action === 'add' ||
-                          change.action === 'created',
-                        'bg-red-100 text-red-800':
-                          change.action === 'remove' ||
-                          change.action === 'deleted',
-                        'bg-amber-100 text-amber-800':
-                          change.action === 'update' ||
-                          change.action === 'updated' ||
-                          change.action === 'product_details_updated',
-                      }"
-                      class="px-2 py-0.5 rounded-full text-xs font-medium"
-                    >
-                      {{ change.action.replace("_", " ") }}
-                    </span>
+          <!-- Expanded product details -->
+          <template v-if="expandedProducts[productId]">
+            <!-- Summary row if available -->
+            <tr
+              v-if="batch.productSummaries && batch.productSummaries[productId]"
+              class="bg-indigo-50/60"
+            >
+              <td></td>
+              <td colspan="2" class="p-3 border-b border-indigo-100">
+                <div class="rounded-md bg-indigo-100/70 p-2 text-sm">
+                  <div class="font-medium text-indigo-700 mb-1">
+                    Resumo das alterações:
                   </div>
-
-                  <!-- Detalhes da quantidade -->
-                  <div
-                    v-if="change.quantityBefore !== undefined"
-                    class="w-full text-gray-600 text-sm"
-                  >
-                    Qtd: {{ change.quantityBefore }} →
-                    {{ change.quantityAfter }}
-                    <span v-if="change.quantityChanged">
-                      ({{ change.action === "add" ? "+" : ""
-                      }}{{ change.quantityChanged }})
-                    </span>
-                  </div>
-
-                  <!-- Campos alterados -->
-                  <div
-                    v-if="
-                      typeof change.changedFields === 'object' &&
-                      Array.isArray(change.changedFields) &&
-                      change.changedFields!.length > 0
-                    "
-                    class="w-full mt-1 text-sm space-y-1"
-                  >
-                    <div
-                      v-for="(field, fieldIdx) in change.changedFields"
-                      :key="fieldIdx"
-                      class="text-gray-600"
-                    >
-                      <span class="font-medium"
-                        >{{ field.field.replace("_", " ") }}:</span
+                  <div class="grid grid-cols-3 gap-2 text-gray-700">
+                    <div>
+                      <div class="text-xs text-gray-500">
+                        Quantidade anterior:
+                      </div>
+                      <div class="font-medium">
+                        {{
+                          batch.productSummaries[
+                            productId
+                          ].totalQuantityBeforeBatch.toFixed(2)
+                        }}
+                      </div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-gray-500">Quantidade atual:</div>
+                      <div class="font-medium">
+                        {{
+                          batch.productSummaries[
+                            productId
+                          ].totalQuantityAfterBatch.toFixed(2)
+                        }}
+                      </div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-gray-500">
+                        Alteração líquida:
+                      </div>
+                      <div
+                        class="font-medium"
+                        :class="
+                          getQuantityChangeClass(
+                            batch.productSummaries[productId]
+                              .netQuantityChangeInBatch
+                          )
+                        "
                       >
-                      {{ field.oldValue }} → {{ field.newValue }}
+                        {{
+                          formatQuantityChange(
+                            batch.productSummaries[productId]
+                              .netQuantityChangeInBatch
+                          )
+                        }}
+                      </div>
                     </div>
                   </div>
+                </div>
+              </td>
+            </tr>
 
-                  <!-- Tags especiais -->
-                  <div class="mt-1 space-x-1">
+            <!-- Individual operation rows -->
+            <tr
+              v-for="(record, idx) in recordsByProduct[productId]"
+              :key="`${productId}-${idx}`"
+              class="bg-gray-50/60 border-b border-gray-100 last:border-b-0"
+            >
+              <td></td>
+              <td colspan="2" class="pl-8 pr-3 py-2">
+                <div class="flex items-start">
+                  <!-- Record icon based on type -->
+                  <div
+                    class="w-10 h-10 rounded-full flex items-center justify-center mr-3 mt-0.5"
+                    :class="{
+                      'bg-emerald-100':
+                        record.details?.action?.includes('creat'),
+                      'bg-red-100': record.details?.action?.includes('delet'),
+                      'bg-amber-100': record.details?.action?.includes('updat'),
+                      'bg-gray-100': !record.details?.action,
+                    }"
+                  >
                     <span
-                      v-if="change.isNewProduct"
-                      class="inline-block px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full"
-                      >Novo Produto</span
+                      class="material-icons-outlined text-sm"
+                      :class="{
+                        'text-emerald-600':
+                          record.details?.action?.includes('creat'),
+                        'text-red-600':
+                          record.details?.action?.includes('delet'),
+                        'text-amber-600':
+                          record.details?.action?.includes('updat'),
+                        'text-gray-600': !record.details?.action,
+                      }"
                     >
-                    <span
-                      v-if="change.isProductRemoval"
-                      class="inline-block px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full"
-                      >Produto Removido</span
+                      {{ getChangeIcon(record.details?.action) }}
+                    </span>
+                  </div>
+
+                  <!-- Record content -->
+                  <div class="flex-grow">
+                    <!-- Record header -->
+                    <div class="flex items-center justify-between mb-1">
+                      <div class="flex items-center">
+                        <span
+                          class="material-icons-outlined text-sm mr-1.5"
+                          :class="
+                            getActionColorClass(record.details?.action || '')
+                          "
+                        >
+                          {{ getRecordTypeIcon(record) }}
+                        </span>
+                        <span
+                          class="font-medium"
+                          :class="
+                            getActionColorClass(record.details?.action || '')
+                          "
+                        >
+                          {{
+                            formatActionName(
+                              record.details?.action || "Alteração"
+                            )
+                          }}
+                        </span>
+
+                        <!-- Entity type badge -->
+                        <span
+                          class="ml-2 px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600"
+                        >
+                          {{
+                            record.entityType === "product" ? "Produto" : "Lote"
+                          }}
+                        </span>
+
+                        <!-- Lote ID if applicable -->
+                        <template v-if="record.entityType === 'lote'">
+                          <span class="ml-1 text-xs text-gray-500">
+                            {{ formatId(record.entityId) }}
+                          </span>
+                        </template>
+                      </div>
+                    </div>
+
+                    <!-- Record details -->
+
+                    <!-- Quantity changes -->
+                    <div
+                      v-if="
+                        record.details?.quantityBefore !== undefined ||
+                        record.details?.quantityAfter !== undefined
+                      "
+                      class="mt-1 rounded bg-gray-100/80 px-2.5 py-1.5 text-sm flex items-center"
                     >
+                      <span
+                        class="material-icons-outlined text-amber-500 text-sm mr-1"
+                        >inventory</span
+                      >
+                      <span class="text-gray-600">Quantidade:</span>
+                      <span class="ml-1 mr-1 font-medium">{{
+                        record.details?.quantityBefore ?? "N/A"
+                      }}</span>
+                      <span
+                        class="material-icons-outlined text-gray-400 mx-1 text-sm"
+                        >arrow_forward</span
+                      >
+                      <span class="font-medium">{{
+                        record.details?.quantityAfter ?? "N/A"
+                      }}</span>
+
+                      <!-- Change amount if available -->
+                      <template
+                        v-if="record.details?.quantityChanged !== undefined"
+                      >
+                        <span
+                          class="ml-2 px-2 py-0.5 rounded-full text-xs font-medium"
+                          :class="
+                            getQuantityChangeClass(
+                              record.details.quantityChanged
+                            )
+                          "
+                        >
+                          {{
+                            formatQuantityChange(record.details.quantityChanged)
+                          }}
+                        </span>
+                      </template>
+                    </div>
+
+                    <!-- Changed fields -->
+                    <div
+                      v-if="record.details?.changedFields?.length"
+                      class="mt-1.5 space-y-1"
+                    >
+                      <div
+                        v-for="(field, fieldIdx) in record.details
+                          .changedFields"
+                        :key="fieldIdx"
+                        class="bg-gray-100/80 px-2.5 py-1.5 rounded text-sm flex items-center"
+                      >
+                        <!-- Field-specific icon -->
+                        <span
+                          class="material-icons-outlined text-sm mr-1.5"
+                          :class="getFieldChangeType(field).colorClass"
+                        >
+                          {{ getFieldChangeType(field).icon }}
+                        </span>
+
+                        <span class="capitalize text-gray-600">
+                          {{ field.field.replace("_", " ") }}:
+                        </span>
+
+                        <template
+                          v-if="
+                            field.oldValue !== undefined ||
+                            field.newValue !== undefined
+                          "
+                        >
+                          <span
+                            class="text-gray-500 ml-1"
+                            v-if="field.oldValue !== undefined"
+                          >
+                            {{ field.oldValue || "N/A" }}
+                          </span>
+                          <span
+                            class="material-icons-outlined text-gray-400 mx-1 text-xs"
+                            >arrow_forward</span
+                          >
+                          <span
+                            class="text-gray-900 font-medium"
+                            v-if="field.newValue !== undefined"
+                          >
+                            {{ field.newValue }}
+                          </span>
+                        </template>
+                        <span
+                          class="text-gray-900 font-medium ml-1"
+                          v-else-if="field.newValue !== undefined"
+                        >
+                          {{ field.newValue }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <!-- Lote details for lotes -->
+                    <div v-if="record.entityType === 'lote'" class="mt-1.5">
+                      <!-- Data validade if present -->
+                      <template
+                        v-if="
+                          record.details?.dataValidadeOld ||
+                          record.details?.dataValidadeNew ||
+                          record.details?.dataValidade
+                        "
+                      >
+                        <div
+                          class="bg-gray-100/80 px-2.5 py-1.5 rounded text-sm flex items-center"
+                        >
+                          <span
+                            class="material-icons-outlined text-green-600 text-sm mr-1.5"
+                            >event</span
+                          >
+                          <span class="text-gray-600">Validade:</span>
+
+                          <template
+                            v-if="
+                              record.details.dataValidadeOld ||
+                              record.details.dataValidadeNew
+                            "
+                          >
+                            <span class="text-gray-500 ml-1">
+                              {{
+                                formatDateOnly(
+                                  record.details.dataValidadeOld
+                                ) || "N/A"
+                              }}
+                            </span>
+                            <span
+                              class="material-icons-outlined text-gray-400 mx-1 text-xs"
+                              >arrow_forward</span
+                            >
+                            <span class="text-gray-900 font-medium">
+                              {{
+                                formatDateOnly(
+                                  record.details.dataValidadeNew ||
+                                    record.details.dataValidade
+                                ) || "N/A"
+                              }}
+                            </span>
+                          </template>
+                          <span
+                            class="text-gray-900 font-medium ml-1"
+                            v-else-if="record.details.dataValidade"
+                          >
+                            {{ formatDateOnly(record.details.dataValidade) }}
+                          </span>
+                        </div>
+                      </template>
+                    </div>
+
+                    <!-- Special tags -->
+                    <div
+                      v-if="
+                        record.details?.isNewProduct ||
+                        record.details?.isProductRemoval
+                      "
+                      class="mt-1.5 flex gap-1"
+                    >
+                      <span
+                        v-if="record.details.isNewProduct"
+                        class="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800 rounded-full"
+                      >
+                        <span class="material-icons-outlined text-xs mr-0.5"
+                          >add_circle</span
+                        >
+                        Novo
+                      </span>
+                      <span
+                        v-if="record.details.isProductRemoval"
+                        class="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full"
+                      >
+                        <span class="material-icons-outlined text-xs mr-0.5"
+                          >delete</span
+                        >
+                        Removido
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </td>
-          </tr>
+              </td>
+            </tr>
+          </template>
         </template>
 
-        <!-- Estado vazio -->
-        <tr v-if="!batch.records || batch.records.length === 0">
-          <td colspan="2" class="p-8 text-center text-gray-500">
+        <!-- Empty state -->
+        <tr v-if="!productIds || productIds.length === 0">
+          <td colspan="3" class="p-6 text-center text-gray-500">
             Nenhuma alteração encontrada neste lote.
           </td>
         </tr>
@@ -380,3 +601,12 @@ function getActionName(record: any): string {
     </table>
   </div>
 </template>
+
+<style scoped>
+.product-row {
+  @apply cursor-pointer transition-colors duration-150 hover:bg-gray-50;
+}
+.product-row.expanded {
+  @apply bg-indigo-50;
+}
+</style>

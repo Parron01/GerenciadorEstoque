@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/Parron01/GerenciadorEstoque/backendGo/internal/models"
@@ -15,151 +16,221 @@ const (
 	EntityTypeLote    = "lote"
 )
 
+// HistoryService defines the interface for history operations
 type HistoryService interface {
-	RecordChange(entityType, entityID string, changeDetails interface{}, batchID ...string) error
+	RecordChange(entityType string, entityID string, changeDetail interface{}, operationBatchIDHeader ...string) error
 	GetHistory(limit, offset int) ([]models.History, error)
 	GetHistoryForEntity(entityType, entityID string) ([]models.History, error)
 	CreateRawHistoryEntry(entry models.History) error
-	CreateBatch(entries []models.History) (string, error) // New: Create batch of history entries
-	GetByBatchID(batchID string) ([]models.History, error) // New: Get entries by batch ID
+	CreateBatch(entries []models.History) (string, error)
+	GetByBatchID(batchID string) ([]models.History, error)
 	GetGroupedHistory(page, pageSize int) (*models.PaginatedHistoryBatchGroups, error)
 }
 
 type historyService struct {
-	repo repository.HistoryRepository
+	repo        repository.HistoryRepository
+	productRepo repository.ProductRepository // Added product repository
 }
 
-func NewHistoryService(repo repository.HistoryRepository) HistoryService {
-	return &historyService{repo: repo}
+// NewHistoryService creates a new HistoryService
+func NewHistoryService(repo repository.HistoryRepository, productRepo repository.ProductRepository) HistoryService {
+	return &historyService{repo: repo, productRepo: productRepo}
 }
 
-// RecordChange now accepts an optional batchID
-func (s *historyService) RecordChange(entityType, entityID string, changeDetails interface{}, batchID ...string) error {
-	changesJSON, err := json.Marshal(changeDetails)
+// RecordChange creates a new history entry
+func (s *historyService) RecordChange(entityType string, entityID string, changeDetail interface{}, operationBatchIDHeader ...string) error {
+	jsonData, err := json.Marshal(changeDetail)
 	if err != nil {
-		return fmt.Errorf("failed to marshal change details to JSON: %w", err)
+		return fmt.Errorf("failed to marshal change detail: %w", err)
 	}
 
-	entry := models.History{
+	batchID := ""
+	if len(operationBatchIDHeader) > 0 && operationBatchIDHeader[0] != "" {
+		batchID = operationBatchIDHeader[0]
+	} else {
+		// If no batch ID from header, generate a new one for this single operation
+		// or use the history entry's own ID as its batch ID.
+		// For now, let's ensure every record has a BatchID, defaulting to its own ID if not part of a larger client-defined batch.
+		// This will be overridden if CreateRawHistoryEntry is called with an explicit BatchID.
+	}
+
+	historyEntry := models.History{
 		ID:         uuid.NewString(),
-		Date:       time.Now().Format(time.RFC3339), // Or your preferred date format
+		Date:       time.Now().Format(time.RFC3339),
 		EntityType: entityType,
 		EntityID:   entityID,
-		Changes:    changesJSON,
+		Changes:    jsonData,
+		BatchID:    batchID, // Will be set properly by CreateRawHistoryEntry
 	}
 
-	// Use provided batchID if available.
-	// If not, the repository layer will default batch_id to entry.id if it's empty.
-	if len(batchID) > 0 && batchID[0] != "" {
-		entry.BatchID = batchID[0]
-	}
+	return s.CreateRawHistoryEntry(historyEntry)
+}
 
+// GetHistory retrieves a paginated list of all history entries
+func (s *historyService) GetHistory(limit, offset int) ([]models.History, error) {
+	return s.repo.GetHistory(limit, offset)
+}
+
+// GetHistoryForEntity retrieves history for a specific entity
+func (s *historyService) GetHistoryForEntity(entityType, entityID string) ([]models.History, error) {
+	return s.repo.GetHistoryByEntity(entityType, entityID)
+}
+
+// CreateRawHistoryEntry directly creates a history entry in the database.
+// If entry.BatchID is empty, it defaults to entry.ID.
+func (s *historyService) CreateRawHistoryEntry(entry models.History) error {
+	if entry.ID == "" {
+		entry.ID = uuid.NewString()
+	}
+	if entry.BatchID == "" {
+		entry.BatchID = entry.ID // Default BatchID to the record's own ID if not provided
+	}
+	if entry.Date == "" {
+		entry.Date = time.Now().Format(time.RFC3339)
+	}
 	return s.repo.Create(&entry)
 }
 
-func (s *historyService) GetHistory(limit, offset int) ([]models.History, error) {
-	if limit <= 0 {
-		limit = 20 // Default limit
-	}
-	if offset < 0 {
-		offset = 0 // Default offset
-	}
-	return s.repo.GetAll(limit, offset)
-}
-
-func (s *historyService) GetHistoryForEntity(entityType, entityID string) ([]models.History, error) {
-	return s.repo.GetByEntityID(entityType, entityID)
-}
-
-// CreateRawHistoryEntry allows creating a history entry directly, typically used by HistoryController
-func (s *historyService) CreateRawHistoryEntry(entry models.History) error {
-    if entry.ID == "" {
-        entry.ID = uuid.NewString()
-    }
-    if entry.Date == "" {
-        entry.Date = time.Now().Format(time.RFC3339)
-    }
-    return s.repo.Create(&entry)
-}
-
-// New method to create a batch of history entries with a common batchID
+// CreateBatch creates multiple history entries with a shared, new batch ID.
 func (s *historyService) CreateBatch(entries []models.History) (string, error) {
-    if len(entries) == 0 {
-        return "", fmt.Errorf("no history entries provided for batch creation")
-    }
-
-    // Generate a common batch ID for all entries
-    batchID := uuid.NewString()
-    now := time.Now().Format(time.RFC3339)
-
-    // Set consistent values for all entries
-    for i := range entries {
-        if entries[i].ID == "" {
-            entries[i].ID = uuid.NewString()
-        }
-        if entries[i].Date == "" {
-            entries[i].Date = now
-        }
-        entries[i].BatchID = batchID // Use the common batchID
-    }
-
-    if err := s.repo.CreateBatch(entries); err != nil {
-        return "", fmt.Errorf("failed to create history batch: %w", err)
-    }
-
-    return batchID, nil
+	if len(entries) == 0 {
+		return "", fmt.Errorf("no entries provided for batch creation")
+	}
+	batchID := uuid.NewString()
+	for i := range entries {
+		entries[i].BatchID = batchID
+		if entries[i].ID == "" {
+			entries[i].ID = uuid.NewString()
+		}
+		if entries[i].Date == "" {
+			entries[i].Date = time.Now().Format(time.RFC3339)
+		}
+	}
+	return batchID, s.repo.CreateBatch(entries)
 }
 
-// New method to retrieve history entries by batchID
+// GetByBatchID retrieves all history entries for a specific batch ID.
 func (s *historyService) GetByBatchID(batchID string) ([]models.History, error) {
-    if batchID == "" {
-        return nil, fmt.Errorf("batch ID is required")
-    }
-    return s.repo.GetByBatchID(batchID)
+	return s.repo.GetByBatchID(batchID)
 }
 
+// GetGroupedHistory retrieves history entries grouped by batch ID, with pagination for batches.
 func (s *historyService) GetGroupedHistory(page, pageSize int) (*models.PaginatedHistoryBatchGroups, error) {
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10 // Default page size for batches
-	}
-	offset := (page - 1) * pageSize
-
-	batchIDs, firstEntryDates, totalBatches, err := s.repo.GetDistinctBatchIDs(pageSize, offset)
+	paginatedRawGroups, err := s.repo.GetGroupedHistoryBatches(page, pageSize)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get distinct batch IDs: %w", err)
+		return nil, fmt.Errorf("failed to get grouped history batches from repo: %w", err)
 	}
 
-	groups := make([]models.HistoryBatchGroup, 0, len(batchIDs))
-	for i, batchID := range batchIDs {
-		records, err := s.repo.GetByBatchID(batchID)
-		if err != nil {
-			// Log or handle error for individual batch, maybe skip this batch
-			fmt.Printf("Warning: failed to get records for batch ID %s: %v\n", batchID, err)
-			continue
-		}
-		if len(records) > 0 {
-			groups = append(groups, models.HistoryBatchGroup{
-				BatchID:     batchID,
-				CreatedAt:   firstEntryDates[i], // Use the fetched first entry date
-				Records:     records,
-				RecordCount: len(records),
-			})
-		}
-	}
+	processedGroups := make([]models.HistoryBatchGroup, len(paginatedRawGroups.Groups))
 
-	totalPages := 0
-	if totalBatches > 0 {
-		totalPages = (totalBatches + pageSize - 1) / pageSize
+	for i, rawGroup := range paginatedRawGroups.Groups {
+		processedRecords := make([]models.History, len(rawGroup.Records))
+		// Temporary maps to store product data fetched once per product per batch
+		productInfoCache := make(map[string]*models.Product) // Cache for product details
+
+		// Calculate net quantity changes for each product within this batch
+		productNetQuantityChangesInBatch := make(map[string]float64) // Key: ProductID
+
+		for _, record := range rawGroup.Records {
+			var productID string
+			var errParse error
+
+			if record.EntityType == EntityTypeLote {
+				var loteDetail models.LoteChangeDetail
+				errParse = json.Unmarshal(record.Changes, &loteDetail)
+				if errParse == nil {
+					productID = loteDetail.ProductID
+					var netLoteChange float64 = 0
+					if loteDetail.Action == "created" && loteDetail.QuantityAfter != nil {
+						netLoteChange = *loteDetail.QuantityAfter
+					} else if loteDetail.Action == "deleted" && loteDetail.QuantityBefore != nil {
+						netLoteChange = -(*loteDetail.QuantityBefore)
+					} else if loteDetail.Action == "updated" && loteDetail.QuantityAfter != nil && loteDetail.QuantityBefore != nil {
+						netLoteChange = *loteDetail.QuantityAfter - *loteDetail.QuantityBefore
+					}
+					if productID != "" {
+						productNetQuantityChangesInBatch[productID] += netLoteChange
+					}
+				}
+			} else if record.EntityType == EntityTypeProduct {
+				productID = record.EntityID
+				// For direct product changes (e.g., non-lote product quantity update),
+				// this might also contribute to net quantity change.
+				// However, if product quantity is strictly derived from lotes via DB trigger,
+				// direct quantity changes in ProductChange might be informational or for non-lote items.
+				// For now, focusing productNetQuantityChangesInBatch on lote-driven changes for simplicity.
+			}
+		}
+
+		// Populate processed records with context and build product summaries
+		productSummaries := make(map[string]models.ProductBatchSummary)
+
+		for j, record := range rawGroup.Records {
+			processedRecord := record // Copy
+			var productIDForContext string
+			var errParseDetail error
+
+			if record.EntityType == EntityTypeLote {
+				var loteDetail models.LoteChangeDetail
+				errParseDetail = json.Unmarshal(record.Changes, &loteDetail)
+				if errParseDetail == nil {
+					productIDForContext = loteDetail.ProductID
+				}
+			} else if record.EntityType == EntityTypeProduct {
+				productIDForContext = record.EntityID
+			}
+
+			if productIDForContext != "" {
+				// Fetch product from cache or DB
+				product, exists := productInfoCache[productIDForContext]
+				if !exists {
+					fetchedProduct, errDb := s.productRepo.GetByID(productIDForContext)
+					if errDb == nil && fetchedProduct != nil {
+						productInfoCache[productIDForContext] = fetchedProduct
+						product = fetchedProduct
+					} else {
+						log.Printf("WARN: GetGroupedHistory - Could not fetch product %s for context: %v", productIDForContext, errDb)
+						// Add a placeholder to cache to avoid refetching on error for this batch
+						productInfoCache[productIDForContext] = &models.Product{ID: productIDForContext, Name: "Unknown Product"}
+						product = productInfoCache[productIDForContext]
+					}
+				}
+
+				if product != nil {
+					processedRecord.ProductNameContext = product.Name
+					currentQty := product.Quantity // This is the product's quantity *after* all DB operations
+					processedRecord.ProductCurrentTotalQuantity = &currentQty
+
+					// Build or update product summary for this productID
+					if _, summaryExists := productSummaries[productIDForContext]; !summaryExists {
+						netChangeForThisProduct := productNetQuantityChangesInBatch[productIDForContext]
+						productSummaries[productIDForContext] = models.ProductBatchSummary{
+							ProductID:                productIDForContext,
+							ProductName:              product.Name,
+							TotalQuantityAfterBatch:  currentQty,
+							NetQuantityChangeInBatch: netChangeForThisProduct,
+							TotalQuantityBeforeBatch: currentQty - netChangeForThisProduct,
+						}
+					}
+				}
+			}
+			processedRecords[j] = processedRecord
+		}
+
+		processedGroups[i] = models.HistoryBatchGroup{
+			BatchID:          rawGroup.BatchID,
+			CreatedAt:        rawGroup.CreatedAt,
+			Records:          processedRecords,
+			RecordCount:      rawGroup.RecordCount,
+			ProductSummaries: productSummaries,
+		}
 	}
 
 	return &models.PaginatedHistoryBatchGroups{
-		Groups:       groups,
-		TotalBatches: totalBatches,
-		Page:         page,
-		PageSize:     pageSize,
-		TotalPages:   totalPages,
+		Groups:       processedGroups,
+		TotalBatches: paginatedRawGroups.TotalBatches,
+		Page:         paginatedRawGroups.Page,
+		PageSize:     paginatedRawGroups.PageSize,
+		TotalPages:   paginatedRawGroups.TotalPages,
 	}, nil
 }

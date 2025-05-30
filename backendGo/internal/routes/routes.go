@@ -18,7 +18,7 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config) {
 	historyRepository := repository.NewHistoryRepository(database.DB)
 
     // Initialize Services
-	historyService := service.NewHistoryService(historyRepository)
+	historyService := service.NewHistoryService(historyRepository, productRepository) // Pass productRepository
 	// Pass database.DB to LoteService for transaction management
 	loteService := service.NewLoteService(loteRepository, productRepository, historyService, database.DB)
 

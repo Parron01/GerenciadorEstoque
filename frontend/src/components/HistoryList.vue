@@ -246,9 +246,6 @@ function formatBatchDate(dateStr: string): string {
           <h3 class="font-medium flex items-center">
             <span class="material-icons-outlined mr-2">history</span>
             Alterações em {{ formatBatchDate(batch.createdAt) }}
-            <span v-if="!authStore.isLocalMode" class="text-xs ml-2 opacity-75">
-              (BatchID: {{ batch.batchId.substring(0, 8) }}...)
-            </span>
           </h3>
         </div>
 

@@ -3,6 +3,7 @@ import HistoryList from "@/components/HistoryList.vue";
 import { ref, onMounted, watch } from "vue";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useAuthStore } from "@/stores/authStore";
+import { formatDateTime } from "@/utils/formatters";
 
 const selectedFilter = ref("all"); // 'all', 'today', 'week', 'month'
 const historyStore = useHistoryStore();

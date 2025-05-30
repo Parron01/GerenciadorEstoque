@@ -21,6 +21,7 @@ export interface ParsedHistoryRecord {
   createdAt: string; // ISO string
   batchId: string;
   productNameContext?: string; // Optional: For lotes, the name of the product they belong to
+  productCurrentTotalQuantity?: number; // Current total quantity of the product
 }
 
 // For sending a batch of history entries (less used now, but kept for completeness)
@@ -31,12 +32,22 @@ export interface HistoryBatchInput {
   // BatchID will be assigned by the backend for this type of input
 }
 
+// New: Represents summary for a product within a batch
+export interface ProductSummaryForBatch {
+  productId: string;
+  productName: string;
+  totalQuantityBeforeBatch: number;
+  totalQuantityAfterBatch: number;
+  netQuantityChangeInBatch: number;
+}
+
 // Represents a group of history records for a single batch operation (from /api/history/grouped)
 export interface HistoryBatchGroup {
   batchId: string;
   createdAt: string; // Timestamp of the first entry in the batch, for ordering
   records: ParsedHistoryRecord[];
   recordCount: number;
+  productSummaries?: Record<string, ProductSummaryForBatch>; // Key: ProductID
 }
 
 // Represents the paginated response for grouped history (from /api/history/grouped)

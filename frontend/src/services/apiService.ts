@@ -330,6 +330,8 @@ export async function fetchGroupedHistoryApi(
 
   // Map and Parse ChangeDetails within each record of each group
   paginatedGroups.groups.forEach((group: HistoryBatchGroup) => {
+    // group.productSummaries is expected to be correctly typed directly from the backend response.
+
     group.records = group.records.map((record: any) => {
       // Backend record structure (from logs):
       // record.id (history entry ID)
@@ -385,7 +387,8 @@ export async function fetchGroupedHistoryApi(
         details: parsedDetails || { error: "Details not found in record" },
         createdAt: record.date || record.createdAt || record.CreatedAt,
         batchId: record.batchId || record.BatchID,
-        productNameContext: record.productNameContext,
+        productNameContext: record.productNameContext, // Added mapping
+        productCurrentTotalQuantity: record.productCurrentTotalQuantity, // Added mapping
       };
     });
   });
