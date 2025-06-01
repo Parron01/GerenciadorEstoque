@@ -1,26 +1,14 @@
 <script setup lang="ts">
 import HistoryList from "@/components/HistoryList.vue";
-import { ref, onMounted, watch } from "vue";
+import { ref, onMounted } from "vue";
 import { useHistoryStore } from "@/stores/historyStore";
-import { useAuthStore } from "@/stores/authStore";
-import { formatDateTime } from "@/utils/formatters";
 
-const selectedFilter = ref("all"); // 'all', 'today', 'week', 'month'
+const selectedFilter = ref("all");
 const historyStore = useHistoryStore();
-const authStore = useAuthStore();
 
 onMounted(() => {
-  // Initial fetch, HistoryList will use historyStore.groupedHistory
   historyStore.fetchGroupedHistory(1, historyStore.pageSizeForGrouped);
 });
-
-// Watch for auth mode changes to refetch history
-watch(
-  () => authStore.isLocalMode,
-  () => {
-    historyStore.fetchGroupedHistory(1, historyStore.pageSizeForGrouped);
-  }
-);
 </script>
 
 <template>
@@ -37,8 +25,9 @@ watch(
       <label
         for="history-filter"
         class="block text-sm font-medium text-gray-700 mb-1"
-        >Filtrar por:</label
       >
+        Filtrar por:
+      </label>
       <select
         id="history-filter"
         v-model="selectedFilter"

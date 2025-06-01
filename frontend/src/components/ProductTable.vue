@@ -2,19 +2,17 @@
 import { useProductStore } from "@/stores/productStore";
 import { useHistoryStore } from "@/stores/historyStore";
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import type { ProductChange, Product } from "@/models/product";
+import type { Product } from "@/models/product";
 import type { Lote, LotePayload } from "@/models/lote";
 import { v4 as uuidv4 } from "uuid";
 import { useToast } from "vue-toastification";
 import AddLoteModal from "./AddLoteModal.vue";
 import EditLoteModal from "./EditLoteModal.vue";
-import { useAuthStore } from "@/stores/authStore";
 import ProductRow from "./product-table/ProductRow.vue";
 import LoteDropdown from "./product-table/LoteDropdown.vue";
 
 const productStore = useProductStore();
 const historyStore = useHistoryStore();
-const authStore = useAuthStore();
 const toast = useToast();
 
 // Edit mode state
@@ -138,57 +136,49 @@ async function confirmUpdates() {
   const operationBatchId = uuidv4();
   let allApiCallsSuccessful = true;
 
+  // Delete lotes first
   for (const { productId, loteId } of loteChangesTracking.value.deleted) {
-    if (authStore.isLocalMode) {
-      // ...
-    } else {
-      try {
-        if (!isComponentMounted.value) return;
-        await productStore.deleteLote(loteId, productId, operationBatchId);
-      } catch (e) {
-        if (!isComponentMounted.value) return;
-        allApiCallsSuccessful = false;
-        toast.error(`Erro ao deletar lote ${loteId.substring(0, 6)}: ${e}`);
-      }
+    try {
+      if (!isComponentMounted.value) return;
+      await productStore.deleteLote(loteId, productId, operationBatchId);
+    } catch (e) {
+      if (!isComponentMounted.value) return;
+      allApiCallsSuccessful = false;
+      toast.error(`Erro ao deletar lote ${loteId.substring(0, 6)}: ${e}`);
     }
   }
 
+  // Update existing lotes
   for (const { productId, loteId, loteData } of loteChangesTracking.value
     .updated) {
-    if (authStore.isLocalMode) {
-      // ...
-    } else {
-      try {
-        if (!isComponentMounted.value) return;
-        await productStore.updateLote(
-          loteId,
-          productId,
-          loteData,
-          operationBatchId
-        );
-      } catch (e) {
-        if (!isComponentMounted.value) return;
-        allApiCallsSuccessful = false;
-        toast.error(`Erro ao atualizar lote ${loteId.substring(0, 6)}: ${e}`);
-      }
+    try {
+      if (!isComponentMounted.value) return;
+      await productStore.updateLote(
+        loteId,
+        productId,
+        loteData,
+        operationBatchId
+      );
+    } catch (e) {
+      if (!isComponentMounted.value) return;
+      allApiCallsSuccessful = false;
+      toast.error(`Erro ao atualizar lote ${loteId.substring(0, 6)}: ${e}`);
     }
   }
 
+  // Create new lotes
   for (const { productId, loteData } of loteChangesTracking.value.created) {
-    if (authStore.isLocalMode) {
-      // ...
-    } else {
-      try {
-        if (!isComponentMounted.value) return;
-        await productStore.createLote(productId, loteData, operationBatchId);
-      } catch (e) {
-        if (!isComponentMounted.value) return;
-        allApiCallsSuccessful = false;
-        toast.error(`Erro ao criar novo lote para ${productId}: ${e}`);
-      }
+    try {
+      if (!isComponentMounted.value) return;
+      await productStore.createLote(productId, loteData, operationBatchId);
+    } catch (e) {
+      if (!isComponentMounted.value) return;
+      allApiCallsSuccessful = false;
+      toast.error(`Erro ao criar novo lote para ${productId}: ${e}`);
     }
   }
 
+  // Update product details
   for (const product of productStore.products) {
     const originalProduct = productsBeforeEdit.value.find(
       (p) => p.id === product.id
@@ -211,81 +201,30 @@ async function confirmUpdates() {
     }
 
     if (productDetailsChanged) {
-      if (authStore.isLocalMode) {
-        if (productUpdatePayload.name) product.name = productUpdatePayload.name;
-        if (productUpdatePayload.unit) product.unit = productUpdatePayload.unit;
-      } else {
-        try {
-          if (!isComponentMounted.value) return;
-          await productStore.updateProductDetails(
-            product.id,
-            productUpdatePayload,
-            operationBatchId
-          );
-        } catch (e) {
-          allApiCallsSuccessful = false;
-          toast.error(
-            `Erro ao atualizar produto ${originalProduct.name}: ${e}`
-          );
-        }
+      try {
+        if (!isComponentMounted.value) return;
+        await productStore.updateProductDetails(
+          product.id,
+          productUpdatePayload,
+          operationBatchId
+        );
+      } catch (e) {
+        allApiCallsSuccessful = false;
+        toast.error(`Erro ao atualizar produto ${originalProduct.name}: ${e}`);
       }
     }
   }
 
-  if (authStore.isLocalMode) {
-    const productChangesBatchForLocal: ProductChange[] = [];
-    productsBeforeEdit.value.forEach((originalProduct) => {
-      const currentProduct = productStore.products.find(
-        (p) => p.id === originalProduct.id
-      );
-      if (!currentProduct) return;
-      const editedName = tempProductDetails.value[originalProduct.id]?.name;
-      const editedUnit = tempProductDetails.value[originalProduct.id]?.unit;
-      if (
-        (editedName && editedName !== originalProduct.name) ||
-        (editedUnit && editedUnit !== originalProduct.unit)
-      ) {
-        productChangesBatchForLocal.push({
-          productId: originalProduct.id,
-          productName: editedName || currentProduct.name,
-          action: "product_details_updated",
-          changedFields: [
-            /* ... populate ... */
-          ],
-        });
-      }
-    });
-    loteChangesTracking.value.created.forEach((change) => {
-      productChangesBatchForLocal.push({
-        productId: change.productId,
-        productName:
-          productStore.products.find((p) => p.id === change.productId)?.name ||
-          "",
-        action: "lote_created",
-        changedFields: [
-          { field: "lote", loteId: change.localId, newValue: change.loteData },
-        ],
-      });
-    });
-
-    if (productChangesBatchForLocal.length > 0) {
-      historyStore.addBatchEntry(productChangesBatchForLocal);
-    }
-    productStore.saveToStorage();
-    toast.success(
-      "Todas as alterações foram aplicadas e registradas localmente!"
-    );
+  if (allApiCallsSuccessful) {
+    toast.success("Alterações enviadas ao servidor com sucesso!");
   } else {
-    if (allApiCallsSuccessful) {
-      toast.success("Alterações enviadas ao servidor!");
-    } else {
-      toast.warning(
-        "Algumas alterações falharam. Verifique os logs e tente novamente."
-      );
-    }
-    await productStore.fetchProductsFromApi();
-    await historyStore.refreshHistory();
+    toast.warning(
+      "Algumas alterações falharam. Verifique os logs e tente novamente."
+    );
   }
+
+  await productStore.fetchProductsFromApi();
+  await historyStore.refreshHistory();
 
   if (!isComponentMounted.value) return;
   isEditMode.value = false;
@@ -296,11 +235,7 @@ async function confirmUpdates() {
 }
 
 function cancelEdit() {
-  if (authStore.isLocalMode) {
-    productStore.loadFromStorage();
-  } else {
-    productStore.fetchProductsFromApi();
-  }
+  productStore.fetchProductsFromApi();
   isEditMode.value = false;
   productsBeforeEdit.value = [];
   loteChangesTracking.value = { created: [], updated: [], deleted: [] };
@@ -326,23 +261,7 @@ async function addProductHandler() {
     return;
   }
   await productStore.addProduct(newProduct.value);
-
-  if (authStore.isLocalMode) {
-    const createdProd = productStore.products.find(
-      (p) =>
-        p.name === newProduct.value.name && p.unit === newProduct.value.unit
-    );
-    historyStore.addBatchEntry([
-      {
-        productId: createdProd?.id || uuidv4(),
-        productName: newProduct.value.name,
-        action: "created",
-        isNewProduct: true,
-      },
-    ]);
-  } else {
-    await historyStore.refreshHistory();
-  }
+  await historyStore.refreshHistory();
   isAddProductMode.value = false;
   newProduct.value = { name: "", unit: "L", quantity: 0 };
 }
@@ -356,22 +275,8 @@ function requestDeleteProduct(product: Product) {
 
 async function confirmDeleteProduct() {
   if (productToDelete.value) {
-    const prodName = productToDelete.value.name;
-    const prodId = productToDelete.value.id;
-    await productStore.removeProduct(prodId);
-
-    if (authStore.isLocalMode) {
-      historyStore.addBatchEntry([
-        {
-          productId: prodId,
-          productName: prodName,
-          action: "deleted",
-          isProductRemoval: true,
-        },
-      ]);
-    } else {
-      await historyStore.refreshHistory();
-    }
+    await productStore.removeProduct(productToDelete.value.id);
+    await historyStore.refreshHistory();
     closeDeleteDialog();
   }
 }
@@ -484,11 +389,7 @@ const sortedProducts = computed(() => {
 
 onMounted(() => {
   productStore.initializeStore();
-  if (!authStore.isLocalMode) {
-    historyStore.refreshHistory();
-  } else {
-    historyStore.fetchGroupedHistory();
-  }
+  historyStore.refreshHistory();
 });
 </script>
 

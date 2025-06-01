@@ -1,37 +1,32 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
-import { useAuthStore } from '@/stores/authStore'
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, RouterView } from "vue-router";
+import { useAuthStore } from "@/stores/authStore";
+import { computed, ref } from "vue";
+import { useRouter } from "vue-router";
 
-const authStore = useAuthStore()
-const router = useRouter()
-const isMenuOpen = ref(false)
+const authStore = useAuthStore();
+const router = useRouter();
+const isMenuOpen = ref(false);
 
-const isLoggedIn = computed(() => authStore.isAuthenticated || authStore.isLocalMode)
-const userDisplayName = computed(() => {
-  if (authStore.isAuthenticated) {
-    return authStore.user || 'Usuário'
-  }
-  return authStore.isLocalMode ? 'Modo Local' : ''
-})
+const isLoggedIn = computed(() => authStore.isAuthenticated);
+const userDisplayName = computed(() => authStore.user || "Usuário");
 
 const handleLogout = () => {
-  authStore.logout()
-  router.push('/login')
-}
+  authStore.logout();
+};
 
-// Função para fechar o menu após a navegação em telas pequenas
 const navigateAndCloseMenu = () => {
   if (isMenuOpen.value) {
-    isMenuOpen.value = false
+    isMenuOpen.value = false;
   }
-}
+};
 </script>
 
 <template>
   <!-- Wrapper de toda a aplicação -->
-  <div class="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-indigo-50 text-gray-800">
+  <div
+    class="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-indigo-50 text-gray-800"
+  >
     <!-- Top Bar -->
     <header
       v-if="isLoggedIn"
@@ -44,8 +39,13 @@ const navigateAndCloseMenu = () => {
       </h1>
 
       <!-- Botão de hamburguer para telas pequenas -->
-      <button @click="isMenuOpen = !isMenuOpen" class="md:hidden text-gray-700 focus:outline-none">
-        <span class="material-icons-outlined text-2xl">{{ isMenuOpen ? 'close' : 'menu' }}</span>
+      <button
+        @click="isMenuOpen = !isMenuOpen"
+        class="md:hidden text-gray-700 focus:outline-none"
+      >
+        <span class="material-icons-outlined text-2xl">{{
+          isMenuOpen ? "close" : "menu"
+        }}</span>
       </button>
 
       <!-- Navegação para telas médias e grandes -->
@@ -73,9 +73,9 @@ const navigateAndCloseMenu = () => {
         <!-- User info and logout -->
         <div class="flex items-center">
           <span class="text-sm text-gray-600 mr-3">
-            <span class="material-icons-outlined text-sm mr-1 align-text-bottom">
-              {{ authStore.isAuthenticated ? 'person' : 'cloud_off' }}
-            </span>
+            <span class="material-icons-outlined text-sm mr-1 align-text-bottom"
+              >person</span
+            >
             {{ userDisplayName }}
           </span>
           <button
@@ -89,7 +89,7 @@ const navigateAndCloseMenu = () => {
       </nav>
     </header>
 
-    <!-- Menu móvel (exibido quando isMenuOpen é true) -->
+    <!-- Menu móvel -->
     <div
       v-if="isLoggedIn && isMenuOpen"
       class="md:hidden fixed top-16 left-0 right-0 z-40 bg-white shadow-lg border-t border-gray-100"
@@ -118,9 +118,7 @@ const navigateAndCloseMenu = () => {
         <div class="border-t border-gray-200 my-2"></div>
 
         <div class="flex items-center px-4 py-2">
-          <span class="material-icons-outlined text-gray-500 mr-2">
-            {{ authStore.isAuthenticated ? 'person' : 'cloud_off' }}
-          </span>
+          <span class="material-icons-outlined text-gray-500 mr-2">person</span>
           <span class="text-gray-700">{{ userDisplayName }}</span>
         </div>
 
@@ -141,7 +139,7 @@ const navigateAndCloseMenu = () => {
 
     <!-- Footer -->
     <footer class="bg-indigo-900 text-indigo-200 text-center py-4 text-sm">
-      <p>© 2025 Estoque Simples - Gerenciamento de inventário simplificado</p>
+      <p>© 2025 Estoque Simples - Gerenciamento de inventário</p>
     </footer>
   </div>
 </template>
@@ -171,7 +169,7 @@ const navigateAndCloseMenu = () => {
 
 /* Posicionamento dos ícones personalizados */
 .Vue-Toastification__toast::before {
-  content: '' !important;
+  content: "" !important;
   position: absolute !important;
   left: 16px !important;
   top: 50% !important;
@@ -186,7 +184,7 @@ const navigateAndCloseMenu = () => {
   align-items: center !important;
   justify-content: center !important;
   z-index: 10 !important;
-  font-family: 'Material Icons Outlined' !important;
+  font-family: "Material Icons Outlined" !important;
   font-size: 20px !important;
   color: white !important;
   text-align: center !important;
@@ -200,7 +198,7 @@ const navigateAndCloseMenu = () => {
 }
 
 .Vue-Toastification__toast--success::before {
-  content: 'check_circle' !important;
+  content: "check_circle" !important;
   background-color: #10b981 !important;
 }
 
@@ -211,7 +209,7 @@ const navigateAndCloseMenu = () => {
 }
 
 .Vue-Toastification__toast--error::before {
-  content: 'error' !important;
+  content: "error" !important;
   background-color: #ef4444 !important;
 }
 
@@ -222,7 +220,7 @@ const navigateAndCloseMenu = () => {
 }
 
 .Vue-Toastification__toast--warning::before {
-  content: 'warning' !important;
+  content: "warning" !important;
   background-color: #f59e0b !important;
 }
 
@@ -233,7 +231,7 @@ const navigateAndCloseMenu = () => {
 }
 
 .Vue-Toastification__toast--info::before {
-  content: 'info' !important;
+  content: "info" !important;
   background-color: #3b82f6 !important;
 }
 
@@ -242,7 +240,11 @@ const navigateAndCloseMenu = () => {
   bottom: 0 !important;
   height: 4px !important;
   opacity: 0.7 !important;
-  background: linear-gradient(to right, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.2)) !important;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.1),
+    rgba(0, 0, 0, 0.2)
+  ) !important;
 }
 
 /* Ajustes responsivos para mobile */

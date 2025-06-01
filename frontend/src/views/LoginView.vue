@@ -10,25 +10,19 @@ const router = useRouter();
 const showPassword = ref(false);
 const isConnectionError = ref(false);
 
-// API base URL from environment variables
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+const API_BASE_URL = authStore.API_BASE_URL;
 
-// Verificar se o usuário já está autenticado
 onMounted(() => {
-  if (authStore.isAuthenticated || authStore.isLocalMode) {
+  if (authStore.isAuthenticated) {
     router.push("/");
   }
-
-  // Testar conexão com o servidor
   testConnection();
 });
 
 async function testConnection() {
   try {
-    // Use the health check endpoint with environment variable
     const response = await fetch(`${API_BASE_URL}/api/auth/health`, {
-      signal: AbortSignal.timeout(2000), // 2 segundos de timeout
+      signal: AbortSignal.timeout(2000),
     }).catch(() => null);
 
     isConnectionError.value = !response || !response.ok;
@@ -40,10 +34,6 @@ async function testConnection() {
 async function handleLogin() {
   if (!username.value || !password.value) return;
   await authStore.login(username.value, password.value);
-}
-
-function handleLocalMode() {
-  authStore.useLocalMode();
 }
 
 function toggleShowPassword() {
@@ -71,16 +61,14 @@ function toggleShowPassword() {
       <!-- Aviso de erro de conexão -->
       <div
         v-if="isConnectionError"
-        class="p-3 md:p-4 bg-yellow-100 text-yellow-800 rounded border border-yellow-200 flex items-start"
+        class="p-3 md:p-4 bg-red-100 text-red-800 rounded border border-red-200 flex items-start"
       >
-        <span class="material-icons-outlined mr-2 text-yellow-600"
-          >warning</span
-        >
+        <span class="material-icons-outlined mr-2 text-red-600">error</span>
         <div>
           <p class="font-medium">Servidor indisponível</p>
           <p class="text-sm">
-            Não foi possível conectar ao servidor. Você ainda pode usar o modo
-            local para demonstração.
+            Não foi possível conectar ao servidor. Verifique se o backend está
+            em execução.
           </p>
         </div>
       </div>
@@ -165,31 +153,9 @@ function toggleShowPassword() {
         </div>
       </form>
 
-      <!-- Divider -->
-      <div class="my-5 md:my-6 flex items-center">
-        <div class="flex-grow border-t border-gray-300"></div>
-        <span class="flex-shrink px-4 text-sm text-gray-500">ou</span>
-        <div class="flex-grow border-t border-gray-300"></div>
-      </div>
-
-      <!-- Botão de acesso local -->
-      <div>
-        <button
-          type="button"
-          @click="handleLocalMode"
-          class="w-full py-2.5 px-4 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md transition flex items-center justify-center"
-        >
-          <span class="material-icons-outlined mr-2">offline_bolt</span>
-          Continuar sem login (modo local)
-        </button>
-      </div>
-
       <!-- Nota de informação -->
       <div class="mt-5 text-center text-xs text-gray-500">
-        <p>Modo local: Os dados são armazenados apenas no seu navegador.</p>
-        <p class="mt-1">
-          Modo autenticado: Os dados são armazenados no servidor.
-        </p>
+        <p>Sistema requer autenticação para acesso.</p>
       </div>
     </div>
   </div>

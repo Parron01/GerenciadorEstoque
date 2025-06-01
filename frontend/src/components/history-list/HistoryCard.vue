@@ -1,33 +1,20 @@
 <script setup lang="ts">
-import type { ProductHistory, ProductChange } from "@/models/product";
 import type {
-  ParsedHistoryRecord,
   HistoryBatchGroup,
   ProductSummaryForBatch,
 } from "@/models/history";
-import type { LoteChangeDetails } from "@/models/lote";
 import { ref, computed } from "vue";
 import {
   formatActionName,
   formatId,
-  getActionColorClass,
   getActionBadgeClass,
   getQuantityChangeClass,
   formatQuantityChange,
-  formatDateTime,
-  formatDateOnly, // Import the new function
+  formatDateOnly,
 } from "@/utils/formatters";
 
 const props = defineProps<{
-  batch:
-    | HistoryBatchGroup
-    | {
-        batchId: string;
-        createdAt: string;
-        records: any[];
-        productSummaries?: Record<string, ProductSummaryForBatch>;
-      };
-  isLocalMode: boolean;
+  batch: HistoryBatchGroup;
 }>();
 
 // Track which products are expanded
@@ -111,23 +98,6 @@ function getProductCurrentQuantity(productId: string): number | null {
   }
 
   return null;
-}
-
-function getChangeIcon(action: string): string {
-  if (!action) return "help";
-
-  const actionLower = action.toLowerCase();
-  if (actionLower.includes("creat") || actionLower.includes("add")) {
-    return "add_circle";
-  }
-  if (actionLower.includes("delet") || actionLower.includes("remov")) {
-    return "delete";
-  }
-  if (actionLower.includes("updat")) {
-    return "edit";
-  }
-
-  return "change_circle";
 }
 </script>
 

@@ -1,32 +1,20 @@
 <script setup lang="ts">
-import type { ProductHistory, ProductChange } from "@/models/product";
 import type {
-  ParsedHistoryRecord,
   HistoryBatchGroup,
   ProductSummaryForBatch,
 } from "@/models/history";
-import type { LoteChangeDetails } from "@/models/lote";
 import { ref, computed } from "vue";
 import {
   formatActionName,
   formatId,
   getActionColorClass,
-  getActionBadgeClass,
   getQuantityChangeClass,
   formatQuantityChange,
-  formatDateOnly, // Import the new function
+  formatDateOnly,
 } from "@/utils/formatters";
 
 const props = defineProps<{
-  batch:
-    | HistoryBatchGroup
-    | {
-        batchId: string;
-        createdAt: string;
-        records: any[];
-        productSummaries?: Record<string, ProductSummaryForBatch>;
-      };
-  isLocalMode: boolean;
+  batch: HistoryBatchGroup;
 }>();
 
 // Track which products are expanded
