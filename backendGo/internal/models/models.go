@@ -120,3 +120,13 @@ type LoteChangeDetail struct {
 	DataValidadeOld *string   `json:"dataValidadeOld,omitempty"` // Previous value if updated
 	DataValidadeNew *string   `json:"dataValidadeNew,omitempty"` // New value if updated
 }
+
+// ProductBatchContextChangeDetail stores snapshot data for a product's state
+// before and after a batch of operations.
+// This is used as the 'changes' for history records with EntityType 'product_batch_context'.
+type ProductBatchContextChangeDetail struct {
+	ProductID           string  `json:"productId"` // Corresponds to the history record's EntityID
+	ProductNameSnapshot string  `json:"productNameSnapshot"`
+	QuantityBeforeBatch float64 `json:"quantityBeforeBatch"`
+	QuantityAfterBatch  float64 `json:"quantityAfterBatch"`
+}

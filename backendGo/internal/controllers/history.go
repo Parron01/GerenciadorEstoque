@@ -211,3 +211,45 @@ func (hc *HistoryController) GetGrouped(c *gin.Context) {
 
 	c.JSON(http.StatusOK, paginatedGroups)
 }
+
+// CreateProductBatchContext godoc
+// @Summary Create a product batch context history entry
+// @Description Records a snapshot of a product's state (name, quantity before/after) for a given batch of operations.
+// @Tags history
+// @Accept json
+// @Produce json
+// @Param context_payload body models.ProductBatchContextChangeDetail true "Product batch context data"
+// @HeaderParam X-Operation-Batch-ID header string true "Batch ID for grouping this context with other operations"
+// @Success 201 {object} gin.H{"message": "Product batch context recorded"}
+// @Failure 400 {object} gin.H{"error": "message"}
+// @Failure 500 {object} gin.H{"error": "message"}
+// @Router /api/history/product-context [post]
+// @Security BearerAuth
+func (hc *HistoryController) CreateProductBatchContext(c *gin.Context) {
+	var payload models.ProductBatchContextChangeDetail
+	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
+
+	if operationBatchID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-Operation-Batch-ID header is required"})
+		return
+	}
+
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload: " + err.Error()})
+		return
+	}
+
+	if payload.ProductID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "productId is required in payload"})
+		return
+	}
+
+	// Use a distinct EntityType for these records
+	err := hc.service.RecordChange(service.EntityTypeProductBatchContext, payload.ProductID, payload, operationBatchID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record product batch context: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"message": "Product batch context recorded successfully"})
+}

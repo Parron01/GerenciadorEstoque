@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	EntityTypeProduct = "product"
-	EntityTypeLote    = "lote"
+	EntityTypeProduct           = "product"
+	EntityTypeLote              = "lote"
+	EntityTypeProductBatchContext = "product_batch_context" // New entity type
 )
 
 // HistoryService defines the interface for history operations
@@ -124,56 +125,43 @@ func (s *historyService) GetGroupedHistory(page, pageSize int) (*models.Paginate
 	processedGroups := make([]models.HistoryBatchGroup, len(paginatedRawGroups.Groups))
 
 	for i, rawGroup := range paginatedRawGroups.Groups {
+		// Map to store product batch context data fetched once per productID per batch
+		productBatchContexts := make(map[string]models.ProductBatchContextChangeDetail) // Key: ProductID
 		processedRecords := make([]models.History, len(rawGroup.Records))
-		// Temporary maps to store product data fetched once per product per batch
-		productInfoCache := make(map[string]*models.Product) // Cache for product details
 
-		// Calculate net quantity changes for each product within this batch
-		productNetQuantityChangesInBatch := make(map[string]float64) // Key: ProductID
-
+		// First pass: Extract ProductBatchContextChangeDetail for each product in the batch
+		// These are specific history records that store the snapshot.
 		for _, record := range rawGroup.Records {
-			var productID string
-			var errParse error
-
-			if record.EntityType == EntityTypeLote {
-				var loteDetail models.LoteChangeDetail
-				errParse = json.Unmarshal(record.Changes, &loteDetail)
-				if errParse == nil {
-					productID = loteDetail.ProductID
-					var netLoteChange float64 = 0
-					if loteDetail.Action == "created" && loteDetail.QuantityAfter != nil {
-						netLoteChange = *loteDetail.QuantityAfter
-					} else if loteDetail.Action == "deleted" && loteDetail.QuantityBefore != nil {
-						netLoteChange = -(*loteDetail.QuantityBefore)
-					} else if loteDetail.Action == "updated" && loteDetail.QuantityAfter != nil && loteDetail.QuantityBefore != nil {
-						netLoteChange = *loteDetail.QuantityAfter - *loteDetail.QuantityBefore
-					}
-					if productID != "" {
-						productNetQuantityChangesInBatch[productID] += netLoteChange
-					}
+			if record.EntityType == EntityTypeProductBatchContext {
+				var ctxDetail models.ProductBatchContextChangeDetail
+				if errUnmarshal := json.Unmarshal(record.Changes, &ctxDetail); errUnmarshal == nil {
+					// Store the context detail against the product ID it refers to (which is record.EntityID for these context records)
+					productBatchContexts[record.EntityID] = ctxDetail
+				} else {
+					log.Printf("WARN: GetGroupedHistory - Failed to unmarshal ProductBatchContextChangeDetail for EntityID %s in BatchID %s: %v", record.EntityID, rawGroup.BatchID, errUnmarshal)
 				}
-			} else if record.EntityType == EntityTypeProduct {
-				productID = record.EntityID
-				// For direct product changes (e.g., non-lote product quantity update),
-				// this might also contribute to net quantity change.
-				// However, if product quantity is strictly derived from lotes via DB trigger,
-				// direct quantity changes in ProductChange might be informational or for non-lote items.
-				// For now, focusing productNetQuantityChangesInBatch on lote-driven changes for simplicity.
 			}
 		}
-
-		// Populate processed records with context and build product summaries
+		
 		productSummaries := make(map[string]models.ProductBatchSummary)
+		// This map can still be useful for lote-specific net changes if needed for other purposes,
+		// but the summary will primarily use the ProductBatchContext.
+		// productNetQuantityChangesInBatch := make(map[string]float64) 
 
+		// Second pass: Process records and build summaries using the extracted context
 		for j, record := range rawGroup.Records {
 			processedRecord := record // Copy
-			var productIDForContext string
-			var errParseDetail error
 
+			// Skip populating context for the context records themselves
+			if record.EntityType == EntityTypeProductBatchContext {
+				processedRecords[j] = processedRecord
+				continue
+			}
+
+			var productIDForContext string
 			if record.EntityType == EntityTypeLote {
 				var loteDetail models.LoteChangeDetail
-				errParseDetail = json.Unmarshal(record.Changes, &loteDetail)
-				if errParseDetail == nil {
+				if json.Unmarshal(record.Changes, &loteDetail) == nil {
 					productIDForContext = loteDetail.ProductID
 				}
 			} else if record.EntityType == EntityTypeProduct {
@@ -181,46 +169,37 @@ func (s *historyService) GetGroupedHistory(page, pageSize int) (*models.Paginate
 			}
 
 			if productIDForContext != "" {
-				// Fetch product from cache or DB
-				product, exists := productInfoCache[productIDForContext]
-				if !exists {
-					fetchedProduct, errDb := s.productRepo.GetByID(productIDForContext)
-					if errDb == nil && fetchedProduct != nil {
-						productInfoCache[productIDForContext] = fetchedProduct
-						product = fetchedProduct
-					} else {
-						log.Printf("WARN: GetGroupedHistory - Could not fetch product %s for context: %v", productIDForContext, errDb)
-						// Add a placeholder to cache to avoid refetching on error for this batch
-						productInfoCache[productIDForContext] = &models.Product{ID: productIDForContext, Name: "Unknown Product"}
-						product = productInfoCache[productIDForContext]
-					}
-				}
-
-				if product != nil {
-					processedRecord.ProductNameContext = product.Name
-					currentQty := product.Quantity // This is the product's quantity *after* all DB operations
-					processedRecord.ProductCurrentTotalQuantity = &currentQty
-
-					// Build or update product summary for this productID
-					if _, summaryExists := productSummaries[productIDForContext]; !summaryExists {
-						netChangeForThisProduct := productNetQuantityChangesInBatch[productIDForContext]
-						productSummaries[productIDForContext] = models.ProductBatchSummary{
-							ProductID:                productIDForContext,
-							ProductName:              product.Name,
-							TotalQuantityAfterBatch:  currentQty,
-							NetQuantityChangeInBatch: netChangeForThisProduct,
-							TotalQuantityBeforeBatch: currentQty - netChangeForThisProduct,
-						}
-					}
+				if ctx, ok := productBatchContexts[productIDForContext]; ok {
+					processedRecord.ProductNameContext = ctx.ProductNameSnapshot
+					// productCurrentTotalQuantity on individual records now means quantity *after* this batch for this product
+					processedRecord.ProductCurrentTotalQuantity = &ctx.QuantityAfterBatch 
+				} else {
+					// Fallback if context record is missing (e.g., older data before this system, or an error saving context)
+					processedRecord.ProductNameContext = "Context Unavailable"
+					// Do not set ProductCurrentTotalQuantity if context is missing to avoid misleading data
 				}
 			}
 			processedRecords[j] = processedRecord
 		}
 
+		// Build ProductSummaries using the data from productBatchContexts
+		// Each product mentioned in a productBatchContexts gets a summary.
+		for productID, ctx := range productBatchContexts {
+			productSummaries[productID] = models.ProductBatchSummary{
+				ProductID:                productID, // This is ctx.ProductID, which is the key
+				ProductName:              ctx.ProductNameSnapshot,
+				TotalQuantityBeforeBatch: ctx.QuantityBeforeBatch,
+				TotalQuantityAfterBatch:  ctx.QuantityAfterBatch,
+				// Net change is derived directly from the snapshot
+				NetQuantityChangeInBatch: ctx.QuantityAfterBatch - ctx.QuantityBeforeBatch, 
+			}
+		}
+
+
 		processedGroups[i] = models.HistoryBatchGroup{
 			BatchID:          rawGroup.BatchID,
 			CreatedAt:        rawGroup.CreatedAt,
-			Records:          processedRecords,
+			Records:          processedRecords, // These are all records, including the context ones if desired for full audit
 			RecordCount:      rawGroup.RecordCount,
 			ProductSummaries: productSummaries,
 		}

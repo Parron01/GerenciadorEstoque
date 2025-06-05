@@ -10,6 +10,7 @@ import AddLoteModal from "./AddLoteModal.vue";
 import EditLoteModal from "./EditLoteModal.vue";
 import ProductRow from "./product-table/ProductRow.vue";
 import LoteDropdown from "./product-table/LoteDropdown.vue";
+import type { ProductBatchContextPayload } from "@/models/history"; // Import new type
 
 const productStore = useProductStore();
 const historyStore = useHistoryStore();
@@ -31,6 +32,11 @@ const newProduct = ref<Omit<Product, "id" | "lotes">>({
 // Temp states for edit mode
 const tempProductDetails = ref<
   Record<string, { name: string; unit: "L" | "kg" }>
+>({});
+
+// Store initial product states (name and total quantity) for batch context history
+const initialProductStatesForBatch = ref<
+  Record<string, { name: string; totalQuantity: number }>
 >({});
 
 // Copy of original products for history tracking and cancellation
@@ -56,15 +62,23 @@ function getProductDisplayQuantity(product: Product): number {
   if (product.lotes && product.lotes.length > 0) {
     return product.lotes.reduce((sum, lote) => sum + lote.quantity, 0);
   }
-  return product.quantity;
+  // If a product has no lotes, its quantity is assumed to be 0.
+  return 0; // Was product.quantity, now strictly 0 if no lotes
 }
 
 function initTempStates() {
   productsBeforeEdit.value = JSON.parse(JSON.stringify(productStore.products));
+  initialProductStatesForBatch.value = {}; // Clear previous batch states
+
   productStore.products.forEach((product) => {
     tempProductDetails.value[product.id] = {
       name: product.name,
       unit: product.unit,
+    };
+    // Capture initial state for product batch context history
+    initialProductStatesForBatch.value[product.id] = {
+      name: product.name,
+      totalQuantity: getProductDisplayQuantity(product), // Calculated from lotes
     };
   });
 }
@@ -136,15 +150,48 @@ async function confirmUpdates() {
   const operationBatchId = uuidv4();
   let allApiCallsSuccessful = true;
 
+  // Collect product IDs affected in this batch for context history later
+  const affectedProductIdsInBatch = new Set<string>();
+  loteChangesTracking.value.created.forEach((item) =>
+    affectedProductIdsInBatch.add(item.productId)
+  );
+  loteChangesTracking.value.updated.forEach((item) =>
+    affectedProductIdsInBatch.add(item.productId)
+  );
+  loteChangesTracking.value.deleted.forEach((item) =>
+    affectedProductIdsInBatch.add(item.productId)
+  );
+  productStore.products.forEach((p) => {
+    const originalProduct = productsBeforeEdit.value.find(
+      (op) => op.id === p.id
+    );
+    if (originalProduct) {
+      const editedName = tempProductDetails.value[p.id]?.name;
+      const editedUnit = tempProductDetails.value[p.id]?.unit;
+      if (
+        (editedName && editedName !== originalProduct.name) ||
+        (editedUnit && editedUnit !== originalProduct.unit)
+      ) {
+        affectedProductIdsInBatch.add(p.id);
+      }
+    }
+  });
+
   // Delete lotes first
   for (const { productId, loteId } of loteChangesTracking.value.deleted) {
     try {
       if (!isComponentMounted.value) return;
       await productStore.deleteLote(loteId, productId, operationBatchId);
     } catch (e) {
+      // The productStore.deleteLote action now handles its own specific toast on error.
+      // We just need to mark that not all API calls were successful.
       if (!isComponentMounted.value) return;
       allApiCallsSuccessful = false;
-      toast.error(`Erro ao deletar lote ${loteId.substring(0, 6)}: ${e}`);
+      console.error(
+        `[ProductTable] Error during productStore.deleteLote for lote ${loteId.substring(0, 6)}:`,
+        e
+      );
+      // Removed toast.error here to avoid double toasting, store action handles it.
     }
   }
 
@@ -210,8 +257,59 @@ async function confirmUpdates() {
         );
       } catch (e) {
         allApiCallsSuccessful = false;
+        // Ensure product ID is added if update fails but was attempted
+        affectedProductIdsInBatch.add(product.id); // Ensure affected ID is tracked
         toast.error(`Erro ao atualizar produto ${originalProduct.name}: ${e}`);
       }
+    }
+  }
+
+  // After all individual operations, record product batch context history
+  // This calculation happens *after* optimistic updates to productStore.products by lote CUD operations
+  // and *before* fetching fresh data from the server.
+  for (const productId of affectedProductIdsInBatch) {
+    const initialProductState = initialProductStatesForBatch.value[productId];
+    // Find the product in the current store state, which reflects optimistic updates
+    const currentProductInStore = productStore.products.find(
+      (p) => p.id === productId
+    );
+
+    if (initialProductState && currentProductInStore) {
+      // Use the potentially updated name from tempProductDetails for the snapshot
+      const finalName =
+        tempProductDetails.value[productId]?.name || initialProductState.name;
+      // Recalculate quantity based on the optimistically updated lotes in the store
+      const finalQuantity = getProductDisplayQuantity(currentProductInStore);
+
+      const productBatchContextData: ProductBatchContextPayload = {
+        productId: productId,
+        productNameSnapshot: finalName,
+        quantityBeforeBatch: initialProductState.totalQuantity,
+        quantityAfterBatch: finalQuantity,
+      };
+
+      try {
+        if (!isComponentMounted.value) return;
+        await historyStore.createProductBatchContextHistory(
+          productBatchContextData,
+          operationBatchId
+        );
+      } catch (e) {
+        allApiCallsSuccessful = false;
+        toast.error(
+          `Erro ao registrar contexto de lote para produto ${finalName}: ${e}`
+        );
+      }
+    } else if (initialProductState && !currentProductInStore) {
+      // This case implies the product was deleted in this batch.
+      // The 'product_deleted' history record will cover its state before deletion.
+      // A product batch context might still be relevant if other changes happened before deletion,
+      // but for simplicity, we'll rely on the product deletion history.
+      // Or, we could create a context record indicating it was deleted.
+      // For now, we only create context if the product still exists in the store post-optimistic updates.
+      console.warn(
+        `Product ${productId} was in initial states but not in current store; likely deleted.`
+      );
     }
   }
 
@@ -232,6 +330,7 @@ async function confirmUpdates() {
   loteChangesTracking.value = { created: [], updated: [], deleted: [] };
   expandedProducts.value = {};
   tempProductDetails.value = {};
+  initialProductStatesForBatch.value = {}; // Clear for next batch
 }
 
 function cancelEdit() {
@@ -240,6 +339,7 @@ function cancelEdit() {
   productsBeforeEdit.value = [];
   loteChangesTracking.value = { created: [], updated: [], deleted: [] };
   expandedProducts.value = {};
+  initialProductStatesForBatch.value = {}; // Clear on cancel
   toast.info("Alterações canceladas.");
 }
 
@@ -513,6 +613,7 @@ onMounted(() => {
               class="bg-gradient-to-r from-indigo-50/80 to-indigo-50/50"
             >
               <td></td>
+              <!-- Empty cell for alignment under the expand icon -->
               <LoteDropdown
                 :product="product"
                 :is-edit-mode="isEditMode"

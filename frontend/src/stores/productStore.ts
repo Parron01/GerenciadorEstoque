@@ -72,31 +72,6 @@ export const useProductStore = defineStore("product", {
       }
     },
 
-    async updateProductQuantity(
-      productId: string,
-      newQuantity: number,
-      operationBatchId?: string
-    ) {
-      const toast = useToast();
-      const product = this.products.find((p) => p.id === productId);
-      if (!product) return;
-
-      const oldQuantity = product.quantity;
-      product.quantity = newQuantity;
-
-      try {
-        await updateProductApi(
-          productId,
-          { quantity: newQuantity },
-          operationBatchId
-        );
-      } catch (error) {
-        console.error("Failed to update product quantity:", error);
-        toast.error(`Falha ao atualizar quantidade do produto: ${error}`);
-        product.quantity = oldQuantity;
-      }
-    },
-
     async removeProduct(productId: string) {
       const toast = useToast();
       const productIndex = this.products.findIndex((p) => p.id === productId);
@@ -121,20 +96,22 @@ export const useProductStore = defineStore("product", {
       operationBatchId?: string
     ) {
       const toast = useToast();
-      const product = this.products.find((p) => p.id === productId);
-      if (!product) return;
+      // Optimistic update is handled by ProductTable.vue's handleSaveLote.
+      // This store action is now only responsible for the API call.
+      // The productStore.products state will be fully synchronized by
+      // fetchProductsFromApi() at the end of ProductTable.vue's confirmUpdates.
 
       try {
-        const createdLote = await createLoteApi(
-          productId,
-          loteData,
-          operationBatchId
-        );
-        if (!product.lotes) product.lotes = [];
-        product.lotes.push(createdLote);
+        // Call the API. We don't need to push to product.lotes here.
+        await createLoteApi(productId, loteData, operationBatchId);
+        // If createLoteApi returned the created lote, and we needed to update
+        // the localId-based optimistic lote with the serverId, this is where it would happen,
+        // but it requires more complex state management (passing localId to this action).
+        // Relying on fetchProductsFromApi() for final sync is simpler.
       } catch (error) {
         console.error("Failed to create lote:", error);
         toast.error(`Falha ao criar lote: ${error}`);
+        throw error; // Re-throw so confirmUpdates in ProductTable.vue knows this specific call failed
       }
     },
 
@@ -145,47 +122,54 @@ export const useProductStore = defineStore("product", {
       operationBatchId?: string
     ) {
       const toast = useToast();
-      const product = this.products.find((p) => p.id === productId);
-      const lote = product?.lotes?.find((l) => l.id === loteId);
-      if (!lote) return;
-
-      const oldLoteData = { ...lote };
-      Object.assign(lote, loteData, { updatedAt: new Date().toISOString() });
+      // Optimistic update to the specific lote object in productStore.products
+      // is handled by ProductTable.vue's handleUpdateLote.
+      // This store action is now only responsible for the API call.
+      // The productStore.products state will be fully synchronized by
+      // fetchProductsFromApi() at the end of ProductTable.vue's confirmUpdates.
 
       try {
-        const updatedLote = await updateLoteApi(
-          loteId,
-          loteData,
-          operationBatchId
-        );
-        Object.assign(lote, updatedLote);
+        // Just call the API.
+        await updateLoteApi(loteId, loteData, operationBatchId);
+        // Similar to createLote, if selective update of the store instance was needed
+        // without a full fetch, it would happen here using the server response.
       } catch (error) {
         console.error("Failed to update lote:", error);
         toast.error(`Falha ao atualizar lote: ${error}`);
-        Object.assign(lote, oldLoteData);
+        // Rollback of ProductTable's optimistic update will effectively happen
+        // via fetchProductsFromApi() if the API call fails.
+        throw error; // Re-throw so confirmUpdates in ProductTable.vue knows this specific call failed
       }
     },
 
     async deleteLote(
       loteId: string,
-      productId: string,
+      productId: string, // Kept for context/logging, though not directly used by deleteLoteApi
       operationBatchId?: string
     ) {
       const toast = useToast();
-      const product = this.products.find((p) => p.id === productId);
-      if (!product || !product.lotes) return;
-      const loteIndex = product.lotes.findIndex((l) => l.id === loteId);
-      if (loteIndex === -1) return;
-
-      const removedLote = product.lotes[loteIndex];
-      product.lotes.splice(loteIndex, 1);
+      // No need to find product or lote in store's state here for the API call,
+      // as the component has already handled the optimistic UI update
+      // and the decision to delete is firm based on loteChangesTracking.
 
       try {
+        console.log(
+          `[ProductStore] Calling deleteLoteApi for loteId: ${loteId}, productId (for context): ${productId}, batchId: ${operationBatchId}`
+        );
         await deleteLoteApi(loteId, operationBatchId);
+        // Success can be noted, but the main success/failure summary is in ProductTable.vue
       } catch (error) {
-        console.error("Failed to delete lote:", error);
-        toast.error(`Falha ao remover lote: ${error}`);
-        product.lotes.splice(loteIndex, 0, removedLote);
+        console.error(
+          `[ProductStore] Failed to delete lote ${loteId} from API:`,
+          error
+        );
+        // Toast the specific error here.
+        toast.error(
+          `Falha ao remover lote ${loteId.substring(0, 8)} do servidor: ${error}`
+        );
+        // Re-throw the error so confirmUpdates in ProductTable.vue knows this specific call failed
+        // and can set allApiCallsSuccessful = false.
+        throw error;
       }
     },
   },

@@ -4,8 +4,9 @@ import type {
   BackendHistoryRecord,
   ParsedHistoryRecord,
   HistoryBatchInput,
-  PaginatedHistoryBatchGroups, // Added
-  HistoryBatchGroup, // Added
+  PaginatedHistoryBatchGroups,
+  HistoryBatchGroup,
+  ProductBatchContextPayload, // Import new type
 } from "@/models/history";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -394,10 +395,30 @@ export async function fetchGroupedHistoryApi(
   });
 
   // Consolidated log for all fetched and processed history groups
-  console.log(
-    "Processed Paginated History Groups:",
-    JSON.stringify(paginatedGroups, null, 2)
-  );
 
   return paginatedGroups;
+}
+
+// NEW: API to create product batch context history
+export async function createProductBatchContextHistoryApi(
+  payload: ProductBatchContextPayload,
+  operationBatchId: string
+): Promise<void> {
+  const response = await fetch(
+    `${getApiBaseUrl()}/api/history/product-context`,
+    {
+      method: "POST",
+      headers: getAuthHeaders(operationBatchId), // Send the batch ID
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!response.ok) {
+    // Use handleResponse to throw an error if not ok, ensuring consistent error handling.
+    // As handleResponse expects a JSON body, if the backend sends no body on error (e.g. 400),
+    // this might need adjustment or the backend should ensure JSON error responses.
+    // For a 201/204 success with no body, this is fine.
+    await handleResponse<any>(response);
+  }
+  // If response.ok and no body is expected on success (e.g. 201 Created, 204 No Content)
+  return Promise.resolve();
 }

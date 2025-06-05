@@ -3,6 +3,7 @@ import type {
   HistoryBatchGroup,
   ProductSummaryForBatch,
 } from "@/models/history";
+import type { ChangedField } from "@/models/product";
 import { ref, computed } from "vue";
 import {
   formatActionName,
@@ -99,6 +100,58 @@ function getProductCurrentQuantity(productId: string): number | null {
 
   return null;
 }
+
+// Helper function to format N/A values as zero
+function formatQuantityValue(value: any): string {
+  if (value === undefined || value === null || value === "N/A") {
+    return "0";
+  }
+  return value.toString();
+}
+
+// Helper function to calculate quantity difference
+function calculateQuantityDifference(before: any, after: any): number {
+  // Convert both values to numbers, treating undefined, null, N/A as 0
+  const beforeNum =
+    before === undefined || before === null || before === "N/A"
+      ? 0
+      : parseFloat(before.toString());
+
+  const afterNum =
+    after === undefined || after === null || after === "N/A"
+      ? 0
+      : parseFloat(after.toString());
+
+  return afterNum - beforeNum;
+}
+
+// Helper function to get the difference in quantities, either from quantityChanged or calculated
+function getQuantityDifference(record: any): number {
+  if (record.details?.quantityChanged !== undefined) {
+    return record.details.quantityChanged;
+  }
+
+  const before = record.details?.quantityBefore;
+  const after = record.details?.quantityAfter;
+  return calculateQuantityDifference(before, after);
+}
+
+// Get lote-specific records for a product
+const getLoteRecordsForProduct = (productId: string) => {
+  return (
+    recordsByProduct.value[productId]?.filter((r) => r.entityType === "lote") ||
+    []
+  );
+};
+
+// Get product-specific records for a product
+const getProductRecordsForProduct = (productId: string) => {
+  return (
+    recordsByProduct.value[productId]?.filter(
+      (r) => r.entityType === "product"
+    ) || []
+  );
+};
 </script>
 
 <template>
@@ -110,150 +163,196 @@ function getProductCurrentQuantity(productId: string): number | null {
         :key="productId"
         class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden"
       >
-        <!-- Product Header -->
-        <div
-          class="p-3 flex items-center justify-between cursor-pointer"
-          :class="{
-            'bg-indigo-50 border-b border-indigo-100':
-              expandedProducts[productId],
-          }"
-          @click="toggleProduct(productId)"
-        >
-          <div class="flex-grow">
-            <div class="font-medium text-indigo-700 flex items-center">
-              <span class="material-icons-outlined mr-1.5 text-indigo-500"
-                >inventory_2</span
-              >
-              {{ getProductName(productId) }}
-            </div>
-
-            <div class="text-xs text-gray-500 mt-0.5 flex items-center">
-              ID: {{ formatId(productId) }}
-
-              <template v-if="getProductCurrentQuantity(productId) !== null">
-                <span class="mx-1">•</span>
-                <span>
-                  Qtd: {{ getProductCurrentQuantity(productId)?.toFixed(2) }}
-                </span>
-
-                <!-- Show quantity change if available -->
-                <template
-                  v-if="
-                    batch.productSummaries &&
-                    batch.productSummaries[productId] &&
-                    batch.productSummaries[productId]
-                      .netQuantityChangeInBatch !== 0
-                  "
+        <!-- Product Header - Now always shows summary changes -->
+        <div class="p-3">
+          <div class="flex items-center justify-between">
+            <div class="flex-grow">
+              <div class="font-medium text-indigo-700 flex items-center">
+                <span class="material-icons-outlined mr-1.5 text-indigo-500"
+                  >inventory_2</span
                 >
-                  <span
-                    :class="
-                      getQuantityChangeClass(
-                        batch.productSummaries[productId]
-                          .netQuantityChangeInBatch
-                      )
-                    "
-                    class="ml-1 font-medium"
-                  >
-                    ({{
-                      formatQuantityChange(
-                        batch.productSummaries[productId]
-                          .netQuantityChangeInBatch
-                      )
-                    }})
-                  </span>
-                </template>
-              </template>
+                {{ getProductName(productId) }}
+              </div>
+
+              <div class="text-xs text-gray-500 mt-0.5 flex items-center">
+                ID: {{ formatId(productId) }}
+              </div>
+            </div>
+
+            <div
+              class="flex items-center cursor-pointer"
+              @click="toggleProduct(productId)"
+            >
+              <span
+                class="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full mr-2"
+              >
+                {{ getLoteRecordsForProduct(productId).length }} lotes
+              </span>
+              <span
+                class="material-icons-outlined text-indigo-600 transition-transform duration-200"
+                :class="{ 'rotate-180': expandedProducts[productId] }"
+              >
+                expand_more
+              </span>
             </div>
           </div>
 
-          <div class="flex items-center">
-            <span
-              class="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full mr-2"
-            >
-              {{ recordsByProduct[productId].length }}
-            </span>
-            <span
-              class="material-icons-outlined text-indigo-600 transition-transform duration-200"
-              :class="{ 'rotate-180': expandedProducts[productId] }"
-            >
-              expand_more
-            </span>
-          </div>
-        </div>
-
-        <!-- Product Details (expanded) -->
-        <div v-if="expandedProducts[productId]" class="p-3 pt-0 space-y-3">
-          <!-- Product summary if available -->
+          <!-- Product Summary - Always visible -->
           <div
-            v-if="batch.productSummaries && batch.productSummaries[productId]"
-            class="p-2 bg-indigo-50 rounded-md mt-3 text-xs"
+            class="mt-2 p-3 bg-indigo-50 rounded-md border border-indigo-100"
           >
-            <div class="font-medium text-indigo-700 mb-1">
-              Resumo das alterações
-            </div>
-            <div class="grid grid-cols-3 gap-1">
-              <div class="px-1">
-                <div class="text-gray-500">Anterior:</div>
-                <div class="font-medium">
+            <!-- Quantity change -->
+            <div
+              v-if="batch.productSummaries && batch.productSummaries[productId]"
+              class="flex items-center justify-between mb-1.5"
+            >
+              <div class="text-sm text-gray-700">Quantidade:</div>
+              <div class="flex items-center">
+                <span class="text-sm text-gray-600">
                   {{
                     batch.productSummaries[
                       productId
                     ].totalQuantityBeforeBatch.toFixed(2)
                   }}
-                </div>
-              </div>
-              <div class="px-1">
-                <div class="text-gray-500">Atual:</div>
-                <div class="font-medium">
+                </span>
+                <span
+                  class="material-icons-outlined text-gray-400 mx-1 text-xs"
+                >
+                  arrow_forward
+                </span>
+                <span class="text-sm font-medium">
                   {{
                     batch.productSummaries[
                       productId
                     ].totalQuantityAfterBatch.toFixed(2)
                   }}
-                </div>
-              </div>
-              <div class="px-1">
-                <div class="text-gray-500">Alteração:</div>
-                <div
-                  class="font-medium"
+                </span>
+                <span
+                  v-if="
+                    batch.productSummaries[productId]
+                      .netQuantityChangeInBatch !== 0
+                  "
                   :class="
                     getQuantityChangeClass(
                       batch.productSummaries[productId].netQuantityChangeInBatch
                     )
                   "
+                  class="ml-2 w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium"
                 >
                   {{
                     formatQuantityChange(
                       batch.productSummaries[productId].netQuantityChangeInBatch
                     )
                   }}
-                </div>
+                </span>
               </div>
             </div>
-          </div>
 
-          <!-- Individual operations -->
+            <!-- Product Updates - Always display changes to product details -->
+            <template
+              v-for="(record, idx) in getProductRecordsForProduct(productId)"
+              :key="idx"
+            >
+              <!-- Show product details changes upfront -->
+              <template v-if="record.details?.changedFields?.length">
+                <div
+                  v-for="(field, fidx) in record.details.changedFields"
+                  :key="`${idx}-${fidx}`"
+                  class="flex items-center justify-between mb-1.5"
+                >
+                  <div class="text-sm text-gray-700 capitalize">
+                    {{ field.field.replace("_", " ") }}:
+                  </div>
+                  <div class="flex items-center">
+                    <span class="text-sm text-gray-600">
+                      {{ field.oldValue || "0" }}
+                    </span>
+                    <span
+                      class="material-icons-outlined text-gray-400 mx-1 text-xs"
+                    >
+                      arrow_forward
+                    </span>
+                    <span class="text-sm font-medium">
+                      {{ field.newValue || "0" }}
+                    </span>
+                  </div>
+                </div>
+              </template>
+            </template>
+
+            <!-- Special tags -->
+            <div
+              v-if="
+                recordsByProduct[productId].some(
+                  (r) => r.details?.isNewProduct || r.details?.isProductRemoval
+                )
+              "
+              class="flex gap-1 mt-1"
+            >
+              <span
+                v-if="
+                  recordsByProduct[productId].some(
+                    (r) => r.details?.isNewProduct
+                  )
+                "
+                class="inline-flex items-center px-1.5 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800 rounded-full"
+              >
+                <span class="material-icons-outlined text-xs mr-0.5"
+                  >add_circle</span
+                >
+                Novo produto
+              </span>
+              <span
+                v-if="
+                  recordsByProduct[productId].some(
+                    (r) => r.details?.isProductRemoval
+                  )
+                "
+                class="inline-flex items-center px-1.5 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full"
+              >
+                <span class="material-icons-outlined text-xs mr-0.5"
+                  >delete</span
+                >
+                Produto removido
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Product Details (expanded) - Now only show Lote operations -->
+        <div v-if="expandedProducts[productId]" class="p-3 pt-0 space-y-3">
+          <!-- Individual lote operations -->
           <div
-            v-for="(record, idx) in recordsByProduct[productId]"
+            v-for="(record, idx) in getLoteRecordsForProduct(productId)"
             :key="`${productId}-${idx}`"
-            class="border-b border-gray-100 last:border-b-0 py-2"
+            class="border-t border-gray-100 pt-2 mt-2 first:border-t-0 first:pt-0 first:mt-0"
           >
-            <!-- Operation header -->
-            <div class="flex items-center justify-between">
+            <!-- Lote operation header - Made more prominent -->
+            <div
+              class="flex items-center justify-between bg-gray-50 p-2 rounded"
+            >
               <div
-                class="px-2 py-0.5 rounded-full text-xs font-medium"
+                class="px-2 py-0.5 rounded-full text-xs font-medium flex items-center"
                 :class="getActionBadgeClass(record.details?.action || '')"
               >
+                <span class="material-icons-outlined mr-1 text-xs">
+                  {{
+                    record.details?.action?.includes("creat")
+                      ? "add_circle"
+                      : record.details?.action?.includes("delet")
+                        ? "delete"
+                        : "edit"
+                  }}
+                </span>
                 {{ formatActionName(record.details?.action || "Alteração") }}
               </div>
 
-              <div class="text-xs text-gray-500">
-                {{ record.entityType === "product" ? "Produto" : "Lote" }}
-                <template v-if="record.entityType === 'lote'">
-                  {{ formatId(record.entityId) }}
-                </template>
+              <div class="text-xs bg-gray-200 px-2 py-0.5 rounded-full">
+                Lote {{ formatId(record.entityId) }}
               </div>
             </div>
+
+            <!-- Record details -->
 
             <!-- Quantity changes -->
             <div
@@ -261,64 +360,29 @@ function getProductCurrentQuantity(productId: string): number | null {
                 record.details?.quantityBefore !== undefined ||
                 record.details?.quantityAfter !== undefined
               "
-              class="mt-1.5 bg-gray-50 p-2 rounded flex items-center text-sm"
+              class="mt-1.5 bg-gray-50/80 p-2 rounded flex items-center text-sm"
             >
               <span class="material-icons-outlined text-amber-500 text-sm mr-1">
                 inventory
               </span>
-              <span class="text-xs text-gray-500">Qtd:</span>
-              <span class="ml-1 text-xs">{{
-                record.details?.quantityBefore ?? "N/A"
-              }}</span>
+              <span class="text-xs text-gray-700 font-medium">Quantidade:</span>
+              <span class="ml-1 mr-1">
+                {{ formatQuantityValue(record.details?.quantityBefore) }}
+              </span>
               <span class="material-icons-outlined text-gray-400 mx-1 text-xs">
                 arrow_forward
               </span>
-              <span class="text-xs font-medium">{{
-                record.details?.quantityAfter ?? "N/A"
-              }}</span>
+              <span class="font-medium">
+                {{ formatQuantityValue(record.details?.quantityAfter) }}
+              </span>
 
-              <template v-if="record.details?.quantityChanged !== undefined">
-                <span
-                  class="ml-auto text-xs font-medium"
-                  :class="
-                    getQuantityChangeClass(record.details.quantityChanged)
-                  "
-                >
-                  {{ formatQuantityChange(record.details.quantityChanged) }}
-                </span>
-              </template>
-            </div>
-
-            <!-- Changed fields -->
-            <div
-              v-if="record.details?.changedFields?.length"
-              class="mt-1.5 space-y-1"
-            >
-              <div
-                v-for="(field, fieldIdx) in record.details.changedFields"
-                :key="fieldIdx"
-                class="bg-gray-50 p-2 rounded"
+              <!-- Move change amount indicator right after quantity info -->
+              <span
+                class="ml-2 rounded-full w-6 h-6 flex items-center justify-center text-xs font-medium"
+                :class="getQuantityChangeClass(getQuantityDifference(record))"
               >
-                <div class="flex items-center justify-between text-xs">
-                  <span class="capitalize font-medium">{{
-                    field.field.replace("_", " ")
-                  }}</span>
-                </div>
-
-                <div class="mt-1 text-sm flex items-center">
-                  <template v-if="field.oldValue !== undefined">
-                    <span class="text-xs text-gray-500">{{
-                      field.oldValue
-                    }}</span>
-                    <span
-                      class="material-icons-outlined text-gray-400 mx-1 text-xs"
-                    >
-                      arrow_forward
-                    </span>
-                  </template>
-                  <span class="text-xs font-medium">{{ field.newValue }}</span>
-                </div>
-              </div>
+                {{ formatQuantityChange(getQuantityDifference(record)) }}
+              </span>
             </div>
 
             <!-- Lote details -->
@@ -329,17 +393,21 @@ function getProductCurrentQuantity(productId: string): number | null {
                   record.details?.dataValidadeNew ||
                   record.details?.dataValidade)
               "
-              class="mt-1.5 bg-gray-50 p-2 rounded"
+              class="mt-1.5 bg-gray-50/80 p-2 rounded"
             >
-              <div class="flex items-center justify-between text-xs">
-                <span class="font-medium">Validade</span>
+              <div class="flex items-center text-xs">
+                <span
+                  class="material-icons-outlined text-green-600 text-sm mr-1"
+                  >event</span
+                >
+                <span class="font-medium text-gray-700">Validade:</span>
               </div>
 
               <div class="mt-1 text-sm flex items-center">
                 <template v-if="record.details.dataValidadeOld">
-                  <span class="text-xs text-gray-500">{{
-                    formatDateOnly(record.details.dataValidadeOld)
-                  }}</span>
+                  <span class="text-xs text-gray-500">
+                    {{ formatDateOnly(record.details.dataValidadeOld) }}
+                  </span>
                   <span
                     class="material-icons-outlined text-gray-400 mx-1 text-xs"
                   >
@@ -356,33 +424,16 @@ function getProductCurrentQuantity(productId: string): number | null {
                 </span>
               </div>
             </div>
+          </div>
 
-            <!-- Special tags -->
-            <div
-              v-if="
-                record.details?.isNewProduct || record.details?.isProductRemoval
-              "
-              class="flex gap-1 mt-1.5"
+          <!-- Empty lote operations message -->
+          <div
+            v-if="getLoteRecordsForProduct(productId).length === 0"
+            class="text-center text-gray-500 p-3"
+          >
+            <span class="text-sm"
+              >Não há operações de lotes neste registro</span
             >
-              <span
-                v-if="record.details.isNewProduct"
-                class="inline-flex items-center px-1.5 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800 rounded-full"
-              >
-                <span class="material-icons-outlined text-xs mr-0.5"
-                  >add_circle</span
-                >
-                Novo
-              </span>
-              <span
-                v-if="record.details.isProductRemoval"
-                class="inline-flex items-center px-1.5 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full"
-              >
-                <span class="material-icons-outlined text-xs mr-0.5"
-                  >delete</span
-                >
-                Removido
-              </span>
-            </div>
           </div>
         </div>
       </div>

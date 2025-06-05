@@ -15,13 +15,17 @@ export interface BackendHistoryRecord {
 // Represents a parsed history record for frontend use
 export interface ParsedHistoryRecord {
   id: string;
-  entityType: "product" | "lote";
+  entityType: "product" | "lote" | "product_batch_context"; // Added new type
   entityId: string;
-  details: ProductChange | LoteChangeDetails | Record<string, any>; // Parsed JSON from ChangeDetails
+  details:
+    | ProductChange
+    | LoteChangeDetails
+    | ProductBatchContextChangeDetails // Added new type
+    | Record<string, any>;
   createdAt: string; // ISO string
   batchId: string;
-  productNameContext?: string; // Optional: For lotes, the name of the product they belong to
-  productCurrentTotalQuantity?: number; // Current total quantity of the product
+  productNameContext?: string;
+  productCurrentTotalQuantity?: number; // This field will now be populated from product_batch_context snapshot
 }
 
 // For sending a batch of history entries (less used now, but kept for completeness)
@@ -67,4 +71,21 @@ export interface ProductHistory {
   date: string;
   changes: ProductChange[]; // Array of changes within this "local batch"
   batchId?: string; // Explicit batchId
+}
+
+// New type for sending product context history
+export interface ProductBatchContextPayload {
+  productId: string;
+  productNameSnapshot: string;
+  quantityBeforeBatch: number;
+  quantityAfterBatch: number;
+  // batchId will be handled by the X-Operation-Batch-ID header
+}
+
+// New type for the 'details' of a product_batch_context history record
+export interface ProductBatchContextChangeDetails {
+  productId: string; // Can be redundant if EntityID is used, but good for explicitness
+  productNameSnapshot: string;
+  quantityBeforeBatch: number;
+  quantityAfterBatch: number;
 }
