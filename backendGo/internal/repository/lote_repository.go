@@ -11,11 +11,11 @@ import (
 
 type LoteRepository interface {
 	Create(tx *sql.Tx, lote *models.Lote) error
-	GetByID(id string) (*models.Lote, error)
-	GetByProductID(productID string) ([]models.Lote, error)
+	GetByID(id string, userID int) (*models.Lote, error)
+	GetByProductID(productID string, userID int) ([]models.Lote, error)
 	Update(tx *sql.Tx, lote *models.Lote) error
-	Delete(tx *sql.Tx, id string) error
-	CountByProductID(productID string) (int, error)
+	Delete(tx *sql.Tx, id string, userID int) error
+	CountByProductID(productID string, userID int) (int, error)
 }
 
 type loteRepository struct {
@@ -31,14 +31,14 @@ func (r *loteRepository) Create(tx *sql.Tx, lote *models.Lote) error {
 	lote.CreatedAt = time.Now()
 	lote.UpdatedAt = time.Now()
 
-	query := `INSERT INTO product_lots (id, product_id, quantity, data_validade, created_at, updated_at)
-              VALUES ($1, $2, $3, $4, $5, $6)`
+	query := `INSERT INTO product_lots (id, product_id, user_id, quantity, data_validade, created_at, updated_at)
+              VALUES ($1, $2, $3, $4, $5, $6, $7)`
 	
 	var err error
 	if tx != nil {
-		_, err = tx.Exec(query, lote.ID, lote.ProductID, lote.Quantity, lote.DataValidade, lote.CreatedAt, lote.UpdatedAt)
+		_, err = tx.Exec(query, lote.ID, lote.ProductID, lote.UserID, lote.Quantity, lote.DataValidade, lote.CreatedAt, lote.UpdatedAt)
 	} else {
-		_, err = r.db.Exec(query, lote.ID, lote.ProductID, lote.Quantity, lote.DataValidade, lote.CreatedAt, lote.UpdatedAt)
+		_, err = r.db.Exec(query, lote.ID, lote.ProductID, lote.UserID, lote.Quantity, lote.DataValidade, lote.CreatedAt, lote.UpdatedAt)
 	}
 
 	if err != nil {
@@ -47,11 +47,11 @@ func (r *loteRepository) Create(tx *sql.Tx, lote *models.Lote) error {
 	return nil
 }
 
-func (r *loteRepository) GetByID(id string) (*models.Lote, error) {
+func (r *loteRepository) GetByID(id string, userID int) (*models.Lote, error) {
 	lote := &models.Lote{}
-	query := `SELECT id, product_id, quantity, data_validade, created_at, updated_at 
-              FROM product_lots WHERE id = $1`
-	err := r.db.QueryRow(query, id).Scan(&lote.ID, &lote.ProductID, &lote.Quantity, &lote.DataValidade, &lote.CreatedAt, &lote.UpdatedAt)
+	query := `SELECT id, product_id, user_id, quantity, data_validade, created_at, updated_at 
+              FROM product_lots WHERE id = $1 AND user_id = $2`
+	err := r.db.QueryRow(query, id, userID).Scan(&lote.ID, &lote.ProductID, &lote.UserID, &lote.Quantity, &lote.DataValidade, &lote.CreatedAt, &lote.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Or a specific "not found" error
@@ -61,9 +61,9 @@ func (r *loteRepository) GetByID(id string) (*models.Lote, error) {
 	return lote, nil
 }
 
-func (r *loteRepository) GetByProductID(productID string) ([]models.Lote, error) {
-	rows, err := r.db.Query(`SELECT id, product_id, quantity, data_validade, created_at, updated_at 
-                             FROM product_lots WHERE product_id = $1 ORDER BY data_validade ASC`, productID)
+func (r *loteRepository) GetByProductID(productID string, userID int) ([]models.Lote, error) {
+	rows, err := r.db.Query(`SELECT id, product_id, user_id, quantity, data_validade, created_at, updated_at 
+                             FROM product_lots WHERE product_id = $1 AND user_id = $2 ORDER BY data_validade ASC`, productID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get lotes by product id: %w", err)
 	}
@@ -72,7 +72,7 @@ func (r *loteRepository) GetByProductID(productID string) ([]models.Lote, error)
 	var lotes []models.Lote
 	for rows.Next() {
 		var lote models.Lote
-		if err := rows.Scan(&lote.ID, &lote.ProductID, &lote.Quantity, &lote.DataValidade, &lote.CreatedAt, &lote.UpdatedAt); err != nil {
+		if err := rows.Scan(&lote.ID, &lote.ProductID, &lote.UserID, &lote.Quantity, &lote.DataValidade, &lote.CreatedAt, &lote.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan lote: %w", err)
 		}
 		lotes = append(lotes, lote)
@@ -107,15 +107,15 @@ func (r *loteRepository) Update(tx *sql.Tx, lote *models.Lote) error {
 	return nil
 }
 
-func (r *loteRepository) Delete(tx *sql.Tx, id string) error {
-	query := `DELETE FROM product_lots WHERE id = $1`
+func (r *loteRepository) Delete(tx *sql.Tx, id string, userID int) error {
+	query := `DELETE FROM product_lots WHERE id = $1 AND user_id = $2`
 	var result sql.Result
 	var err error
 
 	if tx != nil {
-		result, err = tx.Exec(query, id)
+		result, err = tx.Exec(query, id, userID)
 	} else {
-		result, err = r.db.Exec(query, id)
+		result, err = r.db.Exec(query, id, userID)
 	}
 
 	if err != nil {
@@ -131,10 +131,10 @@ func (r *loteRepository) Delete(tx *sql.Tx, id string) error {
 	return nil
 }
 
-func (r *loteRepository) CountByProductID(productID string) (int, error) {
+func (r *loteRepository) CountByProductID(productID string, userID int) (int, error) {
 	var count int
-	query := `SELECT COUNT(*) FROM product_lots WHERE product_id = $1`
-	err := r.db.QueryRow(query, productID).Scan(&count)
+	query := `SELECT COUNT(*) FROM product_lots WHERE product_id = $1 AND user_id = $2`
+	err := r.db.QueryRow(query, productID, userID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count lotes by product id: %w", err)
 	}

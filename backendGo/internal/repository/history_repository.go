@@ -16,10 +16,10 @@ import (
 type HistoryRepository interface {
 	Create(history *models.History) error
 	CreateBatch(entries []models.History) error
-	GetByBatchID(batchID string) ([]models.History, error)
-	GetHistory(limit, offset int) ([]models.History, error)                                  // Added
-	GetHistoryByEntity(entityType, entityID string) ([]models.History, error)                 // Added
-	GetGroupedHistoryBatches(page, pageSize int) (*models.PaginatedHistoryBatchGroups, error) // Added
+	GetByBatchID(batchID string, userID int) ([]models.History, error)
+	GetHistory(limit, offset int, userID int) ([]models.History, error)
+	GetHistoryByEntity(entityType, entityID string, userID int) ([]models.History, error)
+	GetGroupedHistoryBatches(page, pageSize int, userID int) (*models.PaginatedHistoryBatchGroups, error)
 }
 
 type historyRepository struct {
@@ -55,9 +55,9 @@ func (r *historyRepository) Create(history *models.History) error {
 		js = json.RawMessage(b)
 	}
 
-	query := `INSERT INTO history (id, date, entity_type, entity_id, changes, batch_id) 
-              VALUES ($1, $2, $3, $4, $5, $6)`
-	_, err := r.db.Exec(query, history.ID, history.Date, history.EntityType, history.EntityID, js, history.BatchID)
+	query := `INSERT INTO history (id, date, entity_type, entity_id, user_id, changes, batch_id) 
+              VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	_, err := r.db.Exec(query, history.ID, history.Date, history.EntityType, history.EntityID, history.UserID, js, history.BatchID)
 	if err != nil {
 		return fmt.Errorf("failed to create history entry: %w", err)
 	}
@@ -85,8 +85,8 @@ func (r *historyRepository) CreateBatch(entries []models.History) error {
 		}
 	}()
 
-	stmt, err := tx.Prepare(`INSERT INTO history (id, date, entity_type, entity_id, changes, batch_id)
-                             VALUES ($1, $2, $3, $4, $5, $6)`)
+	stmt, err := tx.Prepare(`INSERT INTO history (id, date, entity_type, entity_id, user_id, changes, batch_id)
+                             VALUES ($1, $2, $3, $4, $5, $6, $7)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement for batch insert: %w", err)
 	}
@@ -119,7 +119,7 @@ func (r *historyRepository) CreateBatch(entries []models.History) error {
 			js = json.RawMessage(b)
 		}
 
-		if _, err = stmt.Exec(entry.ID, entry.Date, entry.EntityType, entry.EntityID, js, entry.BatchID); err != nil {
+		if _, err = stmt.Exec(entry.ID, entry.Date, entry.EntityType, entry.EntityID, entry.UserID, js, entry.BatchID); err != nil {
 			return fmt.Errorf("failed to execute statement for entry %s in batch insert: %w", entry.ID, err)
 		}
 	}
@@ -128,13 +128,13 @@ func (r *historyRepository) CreateBatch(entries []models.History) error {
 }
 
 // GetByBatchID retrieves all history entries for a specific batch ID, ordered by date.
-func (r *historyRepository) GetByBatchID(batchID string) ([]models.History, error) {
+func (r *historyRepository) GetByBatchID(batchID string, userID int) ([]models.History, error) {
 	var entries []models.History
 	query := `SELECT id, date, entity_type, entity_id, changes, batch_id
               FROM history
-              WHERE batch_id = $1
+              WHERE batch_id = $1 AND user_id = $2
               ORDER BY date ASC` // Order by date to maintain sequence within a batch
-	rows, err := r.db.Query(query, batchID)
+	rows, err := r.db.Query(query, batchID, userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return []models.History{}, nil // Return empty slice if no rows found
@@ -158,13 +158,14 @@ func (r *historyRepository) GetByBatchID(batchID string) ([]models.History, erro
 }
 
 // GetHistory retrieves a paginated list of all history entries, ordered by date descending.
-func (r *historyRepository) GetHistory(limit, offset int) ([]models.History, error) {
+func (r *historyRepository) GetHistory(limit, offset int, userID int) ([]models.History, error) {
 	var entries []models.History
 	query := `SELECT id, date, entity_type, entity_id, changes, batch_id
               FROM history
+              WHERE user_id = $3
               ORDER BY date DESC
               LIMIT $1 OFFSET $2`
-	rows, err := r.db.Query(query, limit, offset)
+	rows, err := r.db.Query(query, limit, offset, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query history entries: %w", err)
 	}
@@ -184,13 +185,13 @@ func (r *historyRepository) GetHistory(limit, offset int) ([]models.History, err
 }
 
 // GetHistoryByEntity retrieves all history entries for a specific entity, ordered by date descending.
-func (r *historyRepository) GetHistoryByEntity(entityType, entityID string) ([]models.History, error) {
+func (r *historyRepository) GetHistoryByEntity(entityType, entityID string, userID int) ([]models.History, error) {
 	var entries []models.History
 	query := `SELECT id, date, entity_type, entity_id, changes, batch_id
               FROM history
-              WHERE entity_type = $1 AND entity_id = $2
+              WHERE entity_type = $1 AND entity_id = $2 AND user_id = $3
               ORDER BY date DESC`
-	rows, err := r.db.Query(query, entityType, entityID)
+	rows, err := r.db.Query(query, entityType, entityID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query history for entity %s/%s: %w", entityType, entityID, err)
 	}
@@ -210,9 +211,9 @@ func (r *historyRepository) GetHistoryByEntity(entityType, entityID string) ([]m
 }
 
 // GetGroupedHistoryBatches retrieves history entries grouped by batch ID, with pagination for batches.
-func (r *historyRepository) GetGroupedHistoryBatches(page, pageSize int) (*models.PaginatedHistoryBatchGroups, error) {
+func (r *historyRepository) GetGroupedHistoryBatches(page, pageSize int, userID int) (*models.PaginatedHistoryBatchGroups, error) {
 	var totalBatches int
-	err := r.db.QueryRow("SELECT COUNT(DISTINCT batch_id) FROM history").Scan(&totalBatches)
+	err := r.db.QueryRow("SELECT COUNT(DISTINCT batch_id) FROM history WHERE user_id = $1", userID).Scan(&totalBatches)
 	if err != nil {
 		if err == sql.ErrNoRows { // If no history entries at all
 			totalBatches = 0
@@ -239,6 +240,7 @@ func (r *historyRepository) GetGroupedHistoryBatches(page, pageSize int) (*model
 	batchQuery := `
         SELECT batch_id, MIN(date) as first_entry_date
         FROM history
+        WHERE user_id = $3
         GROUP BY batch_id
         ORDER BY first_entry_date DESC, batch_id DESC
         LIMIT $1 OFFSET $2
@@ -250,7 +252,7 @@ func (r *historyRepository) GetGroupedHistoryBatches(page, pageSize int) (*model
 	var batchInfos []BatchInfo
 
 	// Changed from r.db.Select to manual iteration
-	rowsBatchInfo, err := r.db.Query(batchQuery, pageSize, offset)
+	rowsBatchInfo, err := r.db.Query(batchQuery, pageSize, offset, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query paginated batch IDs: %w", err)
 	}
@@ -283,14 +285,14 @@ func (r *historyRepository) GetGroupedHistoryBatches(page, pageSize int) (*model
 	recordsQuery := `
         SELECT id, date, entity_type, entity_id, changes, batch_id
         FROM history
-        WHERE batch_id = $1
+        WHERE batch_id = $1 AND user_id = $2
         ORDER BY date ASC
     ` // Order records within a batch by their date
 
 	for _, batchInfo := range batchInfos {
 		var records []models.History
 		// Changed from r.db.Select to manual iteration
-		rowsRecords, errRecords := r.db.Query(recordsQuery, batchInfo.BatchID)
+		rowsRecords, errRecords := r.db.Query(recordsQuery, batchInfo.BatchID, userID)
 		if errRecords != nil {
 			log.Printf("Error querying records for batch_id %s: %v. Skipping this batch.", batchInfo.BatchID, errRecords)
 			continue

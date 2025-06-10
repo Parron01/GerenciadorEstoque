@@ -10,11 +10,11 @@ import (
 )
 
 type LoteService interface {
-	CreateLote(productID string, loteReq models.Lote, operationBatchID string) (*models.Lote, error)
-	GetLotesByProductID(productID string) ([]models.Lote, error)
-	GetLoteByID(loteID string) (*models.Lote, error)
-	UpdateLote(loteID string, loteReq models.Lote, operationBatchID string) (*models.Lote, error)
-	DeleteLote(loteID string, operationBatchID string) error
+	CreateLote(productID string, loteReq models.Lote, userID int, operationBatchID string) (*models.Lote, error)
+	GetLotesByProductID(productID string, userID int) ([]models.Lote, error)
+	GetLoteByID(loteID string, userID int) (*models.Lote, error)
+	UpdateLote(loteID string, loteReq models.Lote, userID int, operationBatchID string) (*models.Lote, error)
+	DeleteLote(loteID string, userID int, operationBatchID string) error
 }
 
 type loteService struct {
@@ -33,9 +33,9 @@ func NewLoteService(loteRepo repository.LoteRepository, productRepo repository.P
 	}
 }
 
-func (s *loteService) CreateLote(productID string, loteReq models.Lote, operationBatchID string) (*models.Lote, error) {
+func (s *loteService) CreateLote(productID string, loteReq models.Lote, userID int, operationBatchID string) (*models.Lote, error) {
 	// Check if product exists
-	product, err := s.productRepo.GetByID(productID)
+	product, err := s.productRepo.GetByID(productID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("error checking product existence: %w", err)
 	}
@@ -50,6 +50,7 @@ func (s *loteService) CreateLote(productID string, loteReq models.Lote, operatio
 
 	newLote := models.Lote{
 		ProductID:    productID,
+		UserID:       userID,
 		Quantity:     loteReq.Quantity,
 		DataValidade: loteReq.DataValidade,
 	}
@@ -72,7 +73,7 @@ func (s *loteService) CreateLote(productID string, loteReq models.Lote, operatio
 		QuantityAfter: &newLote.Quantity,
 		DataValidade: &newLote.DataValidade,
 	}
-	if err := s.historySvc.RecordChange(EntityTypeLote, newLote.ID, changeDetail, operationBatchID); err != nil {
+	if err := s.historySvc.RecordChange(EntityTypeLote, newLote.ID, changeDetail, userID, operationBatchID); err != nil {
 		// Log error, but don't fail the primary operation for history recording failure
 		fmt.Printf("Warning: failed to record history for lote creation %s: %v\n", newLote.ID, err)
 	}
@@ -84,12 +85,12 @@ func (s *loteService) CreateLote(productID string, loteReq models.Lote, operatio
 	return &newLote, nil
 }
 
-func (s *loteService) GetLotesByProductID(productID string) ([]models.Lote, error) {
-	return s.loteRepo.GetByProductID(productID)
+func (s *loteService) GetLotesByProductID(productID string, userID int) ([]models.Lote, error) {
+	return s.loteRepo.GetByProductID(productID, userID)
 }
 
-func (s *loteService) GetLoteByID(loteID string) (*models.Lote, error) {
-	lote, err := s.loteRepo.GetByID(loteID)
+func (s *loteService) GetLoteByID(loteID string, userID int) (*models.Lote, error) {
+	lote, err := s.loteRepo.GetByID(loteID, userID)
     if err != nil {
         return nil, fmt.Errorf("failed to get lote by ID from repository: %w", err)
     }
@@ -99,8 +100,8 @@ func (s *loteService) GetLoteByID(loteID string) (*models.Lote, error) {
     return lote, nil
 }
 
-func (s *loteService) UpdateLote(loteID string, loteReq models.Lote, operationBatchID string) (*models.Lote, error) {
-	existingLote, err := s.loteRepo.GetByID(loteID)
+func (s *loteService) UpdateLote(loteID string, loteReq models.Lote, userID int, operationBatchID string) (*models.Lote, error) {
+	existingLote, err := s.loteRepo.GetByID(loteID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch existing lote: %w", err)
 	}
@@ -144,7 +145,7 @@ func (s *loteService) UpdateLote(loteID string, loteReq models.Lote, operationBa
 		qtyChanged := existingLote.Quantity - originalQuantity
 		changeDetail.QuantityChanged = &qtyChanged
 	}
-	if err := s.historySvc.RecordChange(EntityTypeLote, loteID, changeDetail, operationBatchID); err != nil {
+	if err := s.historySvc.RecordChange(EntityTypeLote, loteID, changeDetail, userID, operationBatchID); err != nil {
 		fmt.Printf("Warning: failed to record history for lote update %s: %v\n", loteID, err)
 	}
 
@@ -155,8 +156,8 @@ func (s *loteService) UpdateLote(loteID string, loteReq models.Lote, operationBa
 	return existingLote, nil
 }
 
-func (s *loteService) DeleteLote(loteID string, operationBatchID string) error {
-	existingLote, err := s.loteRepo.GetByID(loteID)
+func (s *loteService) DeleteLote(loteID string, userID int, operationBatchID string) error {
+	existingLote, err := s.loteRepo.GetByID(loteID, userID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch lote for deletion: %w", err)
 	}
@@ -170,7 +171,7 @@ func (s *loteService) DeleteLote(loteID string, operationBatchID string) error {
 	}
 	defer tx.Rollback()
 
-	if err := s.loteRepo.Delete(tx, loteID); err != nil {
+	if err := s.loteRepo.Delete(tx, loteID, userID); err != nil {
 		return fmt.Errorf("failed to delete lote in repository: %w", err)
 	}
 
@@ -182,7 +183,7 @@ func (s *loteService) DeleteLote(loteID string, operationBatchID string) error {
 		QuantityBefore: &existingLote.Quantity,
 		DataValidade:   &existingLote.DataValidade,
 	}
-	if err := s.historySvc.RecordChange(EntityTypeLote, loteID, changeDetail, operationBatchID); err != nil {
+	if err := s.historySvc.RecordChange(EntityTypeLote, loteID, changeDetail, userID, operationBatchID); err != nil {
 		fmt.Printf("Warning: failed to record history for lote deletion %s: %v\n", loteID, err)
 	}
 

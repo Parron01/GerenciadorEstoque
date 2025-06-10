@@ -37,11 +37,17 @@ func (hc *HistoryController) GetAll(c *gin.Context) {
 	var historyEntries []models.History
 	var fetchErr error
 
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	// If batch_id is provided, get by batch_id instead
 	if batchID != "" {
-		historyEntries, fetchErr = hc.service.GetByBatchID(batchID)
+		historyEntries, fetchErr = hc.service.GetByBatchID(batchID, userID.(int))
 	} else {
-		historyEntries, fetchErr = hc.service.GetHistory(limit, offset)
+		historyEntries, fetchErr = hc.service.GetHistory(limit, offset, userID.(int))
 	}
 
 	if fetchErr != nil {
@@ -92,12 +98,18 @@ func (hc *HistoryController) GetHistoryForEntity(c *gin.Context) {
 	entityType := c.Param("entity_type")
 	entityID := c.Param("entity_id")
 
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	if entityType != service.EntityTypeProduct && entityType != service.EntityTypeLote {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entity_type. Must be 'product' or 'lote'."})
 		return
 	}
 
-	historyEntries, err := hc.service.GetHistoryForEntity(entityType, entityID)
+	historyEntries, err := hc.service.GetHistoryForEntity(entityType, entityID, userID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve history for entity: " + err.Error()})
 		return
@@ -165,7 +177,13 @@ func (hc *HistoryController) GetByBatch(c *gin.Context) {
 		return
 	}
 
-	historyEntries, err := hc.service.GetByBatchID(batchID)
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	historyEntries, err := hc.service.GetByBatchID(batchID, userID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch history by batch ID: " + err.Error()})
 		return
@@ -203,7 +221,13 @@ func (hc *HistoryController) GetGrouped(c *gin.Context) {
 		pageSize = 10
 	}
 
-	paginatedGroups, err := hc.service.GetGroupedHistory(page, pageSize)
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	paginatedGroups, err := hc.service.GetGroupedHistory(page, pageSize, userID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch grouped history: " + err.Error()})
 		return
@@ -229,6 +253,12 @@ func (hc *HistoryController) CreateProductBatchContext(c *gin.Context) {
 	var payload models.ProductBatchContextChangeDetail
 	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	if operationBatchID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "X-Operation-Batch-ID header is required"})
 		return
@@ -245,7 +275,7 @@ func (hc *HistoryController) CreateProductBatchContext(c *gin.Context) {
 	}
 
 	// Use a distinct EntityType for these records
-	err := hc.service.RecordChange(service.EntityTypeProductBatchContext, payload.ProductID, payload, operationBatchID)
+	err := hc.service.RecordChange(service.EntityTypeProductBatchContext, payload.ProductID, payload, userID.(int), operationBatchID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record product batch context: " + err.Error()})
 		return

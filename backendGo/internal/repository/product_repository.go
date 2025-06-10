@@ -8,11 +8,11 @@ import (
 )
 
 type ProductRepository interface {
-	GetAll() ([]models.Product, error)
-	GetByID(id string) (*models.Product, error)
+	GetAll(userID int) ([]models.Product, error)
+	GetByID(id string, userID int) (*models.Product, error)
 	Create(product *models.Product) error
 	Update(product *models.Product) error
-	Delete(id string) error
+	Delete(id string, userID int) error
 }
 
 type productRepository struct {
@@ -24,8 +24,8 @@ func NewProductRepository(db *sql.DB, loteRepo LoteRepository) ProductRepository
 	return &productRepository{db: db, loteRepository: loteRepo}
 }
 
-func (r *productRepository) GetAll() ([]models.Product, error) {
-	rows, err := r.db.Query("SELECT id, name, unit, quantity FROM products")
+func (r *productRepository) GetAll(userID int) ([]models.Product, error) {
+	rows, err := r.db.Query("SELECT id, name, unit, quantity FROM products WHERE user_id = $1", userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch products: %w", err)
 	}
@@ -38,7 +38,7 @@ func (r *productRepository) GetAll() ([]models.Product, error) {
 			return nil, fmt.Errorf("failed to scan product: %w", err)
 		}
 		// Fetch associated lotes
-		lotes, err := r.loteRepository.GetByProductID(product.ID)
+		lotes, err := r.loteRepository.GetByProductID(product.ID, userID)
 		if err != nil {
 			// Log error but continue, or return error based on policy
 			fmt.Printf("Warning: failed to fetch lotes for product %s: %v\n", product.ID, err)
@@ -49,9 +49,9 @@ func (r *productRepository) GetAll() ([]models.Product, error) {
 	return products, nil
 }
 
-func (r *productRepository) GetByID(id string) (*models.Product, error) {
+func (r *productRepository) GetByID(id string, userID int) (*models.Product, error) {
 	var product models.Product
-	err := r.db.QueryRow("SELECT id, name, unit, quantity FROM products WHERE id = $1", id).
+	err := r.db.QueryRow("SELECT id, name, unit, quantity FROM products WHERE id = $1 AND user_id = $2", id, userID).
 		Scan(&product.ID, &product.Name, &product.Unit, &product.Quantity)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -61,7 +61,7 @@ func (r *productRepository) GetByID(id string) (*models.Product, error) {
 	}
 
 	// Fetch associated lotes
-	lotes, err := r.loteRepository.GetByProductID(product.ID)
+	lotes, err := r.loteRepository.GetByProductID(product.ID, userID)
 	if err != nil {
 		// Log error but continue, or return error based on policy
 		fmt.Printf("Warning: failed to fetch lotes for product %s: %v\n", product.ID, err)
@@ -73,13 +73,13 @@ func (r *productRepository) GetByID(id string) (*models.Product, error) {
 func (r *productRepository) Create(product *models.Product) error {
 	// Note: Product.Quantity will be updated by trigger if lotes are managed.
 	// If creating a product without lotes, this quantity is the initial one.
-	stmt, err := r.db.Prepare("INSERT INTO products (id, name, unit, quantity) VALUES ($1, $2, $3, $4)")
+	stmt, err := r.db.Prepare("INSERT INTO products (id, name, unit, quantity, user_id) VALUES ($1, $2, $3, $4, $5)")
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement for create product: %w", err)
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(product.ID, product.Name, product.Unit, product.Quantity)
+	_, err = stmt.Exec(product.ID, product.Name, product.Unit, product.Quantity, product.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to create product: %w", err)
 	}
@@ -89,7 +89,7 @@ func (r *productRepository) Create(product *models.Product) error {
 func (r *productRepository) Update(product *models.Product) error {
 	// Note: Product.Quantity will be updated by trigger if lotes are managed.
 	// Updating product details other than quantity directly.
-	stmt, err := r.db.Prepare("UPDATE products SET name = $1, unit = $2 WHERE id = $3")
+	stmt, err := r.db.Prepare("UPDATE products SET name = $1, unit = $2 WHERE id = $3 AND user_id = $4")
 	// If quantity needs to be updatable here AND lots exist, logic is more complex.
 	// For now, assuming trigger handles quantity based on lots.
 	// If no lots, direct quantity update: "UPDATE products SET name = $1, unit = $2, quantity = $3 WHERE id = $4"
@@ -98,7 +98,7 @@ func (r *productRepository) Update(product *models.Product) error {
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(product.Name, product.Unit, product.ID)
+	result, err := stmt.Exec(product.Name, product.Unit, product.ID, product.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to update product: %w", err)
 	}
@@ -109,15 +109,15 @@ func (r *productRepository) Update(product *models.Product) error {
 	return nil
 }
 
-func (r *productRepository) Delete(id string) error {
+func (r *productRepository) Delete(id string, userID int) error {
 	// Deleting a product will also delete its lotes due to ON DELETE CASCADE
-	stmt, err := r.db.Prepare("DELETE FROM products WHERE id = $1")
+	stmt, err := r.db.Prepare("DELETE FROM products WHERE id = $1 AND user_id = $2")
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement for delete product: %w", err)
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(id)
+	result, err := stmt.Exec(id, userID)
 	if err != nil {
 		return fmt.Errorf("failed to delete product: %w", err)
 	}

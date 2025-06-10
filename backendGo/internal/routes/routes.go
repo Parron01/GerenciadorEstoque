@@ -43,8 +43,8 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config) {
         // Product routes
 		products := api.Group("/products")
 		{
-			products.GET("", productController.GetAll)
-			products.GET("/:product_id", productController.GetByID) // Changed :id to :product_id
+			products.GET("", middleware.AuthMiddleware(cfg), productController.GetAll)
+			products.GET("/:product_id", middleware.AuthMiddleware(cfg), productController.GetByID) // Changed :id to :product_id
 			products.POST("", middleware.AuthMiddleware(cfg), productController.Create)
 			products.PUT("/:product_id", middleware.AuthMiddleware(cfg), productController.Update) // Changed :id to :product_id
 			products.DELETE("/:product_id", middleware.AuthMiddleware(cfg), productController.Delete) // Changed :id to :product_id

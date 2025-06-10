@@ -46,6 +46,11 @@ func InitDB(cfg *config.Config) error {
         return fmt.Errorf("error creating admin user: %w", err)
     }
 
+    // Create test user if needed
+    if err = createTestUser("teste", "teste"); err != nil {
+        return fmt.Errorf("error creating test user: %w", err)
+    }
+
     // Insert sample data if needed
     if err = insertSampleData(); err != nil {
         return fmt.Errorf("error inserting sample data: %w", err)
@@ -156,6 +161,29 @@ func createAdminUser(username, password string) error {
         log.Printf("Admin user created successfully: %s\n", username)
     }
 
+    return nil
+}
+
+// createTestUser cria um usuário com credenciais "teste"/"teste" caso não exista
+func createTestUser(username, password string) error {
+    var count int
+    err := DB.QueryRow("SELECT COUNT(*) FROM users WHERE username = $1", username).Scan(&count)
+    if err != nil {
+        return err
+    }
+    if count == 0 {
+        hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+        if err != nil {
+            return err
+        }
+        if _, err := DB.Exec(
+            "INSERT INTO users (username, password) VALUES ($1, $2)",
+            username, string(hashedPassword),
+        ); err != nil {
+            return err
+        }
+        log.Printf("Test user created successfully: %s\n", username)
+    }
     return nil
 }
 

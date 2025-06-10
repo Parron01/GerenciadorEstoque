@@ -15,15 +15,17 @@ import (
 
 // Claims represents the JWT claims structure
 type Claims struct {
+    UserID   int    `json:"userID"`
     Username string `json:"username"`
     jwt.RegisteredClaims
 }
 
 // GenerateToken generates a new JWT token for a user
-func GenerateToken(username string, cfg *config.Config) (string, error) {
+func GenerateToken(userID int, username string, cfg *config.Config) (string, error) {
     expirationTime := time.Now().Add(cfg.JWT.Expiration)
 
     claims := &Claims{
+        UserID:   userID,
         Username: username,
         RegisteredClaims: jwt.RegisteredClaims{
             ExpiresAt: jwt.NewNumericDate(expirationTime),
@@ -79,7 +81,8 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
             return
         }
 
-        // Set username in context for later use
+        // Set username and userID in context for later use
+        c.Set("userID", claims.UserID)
         c.Set("username", claims.Username)
         c.Next()
     }

@@ -56,7 +56,7 @@ func (ac *AuthController) Login(c *gin.Context) {
     }
 
     // Generate JWT token
-    token, err := middleware.GenerateToken(user.Username, ac.Config)
+    token, err := middleware.GenerateToken(user.ID, user.Username, ac.Config)
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao gerar token"})
         return

@@ -32,7 +32,13 @@ func NewProductController(repo repository.ProductRepository, historySvc service.
 // @Router /api/products [get]
 // @Security BearerAuth
 func (pc *ProductController) GetAll(c *gin.Context) {
-	products, err := pc.repo.GetAll()
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	products, err := pc.repo.GetAll(userID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch products: " + err.Error()})
 		return
@@ -57,7 +63,13 @@ func (pc *ProductController) GetAll(c *gin.Context) {
 func (pc *ProductController) GetByID(c *gin.Context) {
 	productID := c.Param("product_id") // Changed from "id"
 
-	product, err := pc.repo.GetByID(productID)
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	product, err := pc.repo.GetByID(productID, userID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch product by ID: " + err.Error()})
 		return
@@ -87,6 +99,12 @@ func (pc *ProductController) Create(c *gin.Context) {
 	var product models.Product
 	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	if err := c.ShouldBindJSON(&product); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product data: " + err.Error()})
 		return
@@ -95,6 +113,9 @@ func (pc *ProductController) Create(c *gin.Context) {
 	if product.ID == "" {
 		product.ID = uuid.NewString()
 	}
+
+	// Set the user ID for the product
+	product.UserID = userID.(int)
 
 	err := pc.repo.Create(&product)
 	if err != nil {
@@ -111,11 +132,11 @@ func (pc *ProductController) Create(c *gin.Context) {
 		QuantityAfter:  &qtyAfter, // Assign address of qtyAfter
 		IsNewProduct:   true,
 	}
-	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, product.ID, changeDetail, operationBatchID); err != nil {
+	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, product.ID, changeDetail, userID.(int), operationBatchID); err != nil {
 		// Log or handle history recording error, but don't fail the main operation
 	}
 
-	createdProduct, fetchErr := pc.repo.GetByID(product.ID)
+	createdProduct, fetchErr := pc.repo.GetByID(product.ID, userID.(int))
 	if fetchErr != nil {
 		c.JSON(http.StatusCreated, product)
 		return
@@ -148,12 +169,18 @@ func (pc *ProductController) Update(c *gin.Context) {
 	}
 	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product data: " + err.Error()})
 		return
 	}
 
-	existingProduct, err := pc.repo.GetByID(productID)
+	existingProduct, err := pc.repo.GetByID(productID, userID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch existing product: " + err.Error()})
 		return
@@ -202,7 +229,7 @@ func (pc *ProductController) Update(c *gin.Context) {
 	// The repository's Update method should be specific about which fields it updates.
 	// For safety, explicitly set it if there's any doubt:
 	productToUpdate.Quantity = existingProduct.Quantity
-
+	productToUpdate.UserID = userID.(int)
 
 	err = pc.repo.Update(&productToUpdate) // Pass the selectively updated product
 	if err != nil {
@@ -217,12 +244,12 @@ func (pc *ProductController) Update(c *gin.Context) {
 			Action:        "product_details_updated",
 			ChangedFields: changedFields,
 		}
-		if histErr := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail, operationBatchID); histErr != nil {
+		if histErr := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail, userID.(int), operationBatchID); histErr != nil {
 			log.Printf("WARN: Failed to record history for product update %s: %v", productID, histErr)
 		}
 	}
 
-	finalUpdatedProduct, fetchErr := pc.repo.GetByID(productID)
+	finalUpdatedProduct, fetchErr := pc.repo.GetByID(productID, userID.(int))
 	if fetchErr != nil {
 		log.Printf("WARN: Failed to fetch product %s after update, returning potentially stale data: %v", productID, fetchErr)
 		c.JSON(http.StatusOK, productToUpdate) // Fallback
@@ -247,7 +274,13 @@ func (pc *ProductController) Delete(c *gin.Context) {
 	productID := c.Param("product_id") // Changed from "id"
 	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
-	existingProduct, err := pc.repo.GetByID(productID)
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	existingProduct, err := pc.repo.GetByID(productID, userID.(int))
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check product existence: " + err.Error()})
         return
@@ -257,7 +290,7 @@ func (pc *ProductController) Delete(c *gin.Context) {
         return
     }
 
-	err = pc.repo.Delete(productID)
+	err = pc.repo.Delete(productID, userID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete product: " + err.Error()})
 		return
@@ -272,7 +305,7 @@ func (pc *ProductController) Delete(c *gin.Context) {
 		QuantityBefore:   &qtyBefore, // Assign address of qtyBefore
 		IsProductRemoval: true,
 	}
-	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail, operationBatchID); err != nil {
+	if err := pc.historySvc.RecordChange(service.EntityTypeProduct, productID, changeDetail, userID.(int), operationBatchID); err != nil {
 		// Log or handle history recording error
 	}
 

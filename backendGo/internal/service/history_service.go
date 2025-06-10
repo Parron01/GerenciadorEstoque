@@ -19,13 +19,13 @@ const (
 
 // HistoryService defines the interface for history operations
 type HistoryService interface {
-	RecordChange(entityType string, entityID string, changeDetail interface{}, operationBatchIDHeader ...string) error
-	GetHistory(limit, offset int) ([]models.History, error)
-	GetHistoryForEntity(entityType, entityID string) ([]models.History, error)
+	RecordChange(entityType string, entityID string, changeDetail interface{}, userID int, operationBatchIDHeader ...string) error
+	GetHistory(limit, offset int, userID int) ([]models.History, error)
+	GetHistoryForEntity(entityType, entityID string, userID int) ([]models.History, error)
 	CreateRawHistoryEntry(entry models.History) error
 	CreateBatch(entries []models.History) (string, error)
-	GetByBatchID(batchID string) ([]models.History, error)
-	GetGroupedHistory(page, pageSize int) (*models.PaginatedHistoryBatchGroups, error)
+	GetByBatchID(batchID string, userID int) ([]models.History, error)
+	GetGroupedHistory(page, pageSize int, userID int) (*models.PaginatedHistoryBatchGroups, error)
 }
 
 type historyService struct {
@@ -39,7 +39,7 @@ func NewHistoryService(repo repository.HistoryRepository, productRepo repository
 }
 
 // RecordChange creates a new history entry
-func (s *historyService) RecordChange(entityType string, entityID string, changeDetail interface{}, operationBatchIDHeader ...string) error {
+func (s *historyService) RecordChange(entityType string, entityID string, changeDetail interface{}, userID int, operationBatchIDHeader ...string) error {
 	jsonData, err := json.Marshal(changeDetail)
 	if err != nil {
 		return fmt.Errorf("failed to marshal change detail: %w", err)
@@ -60,6 +60,7 @@ func (s *historyService) RecordChange(entityType string, entityID string, change
 		Date:       time.Now().Format(time.RFC3339),
 		EntityType: entityType,
 		EntityID:   entityID,
+		UserID:     userID,
 		Changes:    jsonData,
 		BatchID:    batchID, // Will be set properly by CreateRawHistoryEntry
 	}
@@ -68,13 +69,13 @@ func (s *historyService) RecordChange(entityType string, entityID string, change
 }
 
 // GetHistory retrieves a paginated list of all history entries
-func (s *historyService) GetHistory(limit, offset int) ([]models.History, error) {
-	return s.repo.GetHistory(limit, offset)
+func (s *historyService) GetHistory(limit, offset int, userID int) ([]models.History, error) {
+	return s.repo.GetHistory(limit, offset, userID)
 }
 
 // GetHistoryForEntity retrieves history for a specific entity
-func (s *historyService) GetHistoryForEntity(entityType, entityID string) ([]models.History, error) {
-	return s.repo.GetHistoryByEntity(entityType, entityID)
+func (s *historyService) GetHistoryForEntity(entityType, entityID string, userID int) ([]models.History, error) {
+	return s.repo.GetHistoryByEntity(entityType, entityID, userID)
 }
 
 // CreateRawHistoryEntry directly creates a history entry in the database.
@@ -111,13 +112,13 @@ func (s *historyService) CreateBatch(entries []models.History) (string, error) {
 }
 
 // GetByBatchID retrieves all history entries for a specific batch ID.
-func (s *historyService) GetByBatchID(batchID string) ([]models.History, error) {
-	return s.repo.GetByBatchID(batchID)
+func (s *historyService) GetByBatchID(batchID string, userID int) ([]models.History, error) {
+	return s.repo.GetByBatchID(batchID, userID)
 }
 
 // GetGroupedHistory retrieves history entries grouped by batch ID, with pagination for batches.
-func (s *historyService) GetGroupedHistory(page, pageSize int) (*models.PaginatedHistoryBatchGroups, error) {
-	paginatedRawGroups, err := s.repo.GetGroupedHistoryBatches(page, pageSize)
+func (s *historyService) GetGroupedHistory(page, pageSize int, userID int) (*models.PaginatedHistoryBatchGroups, error) {
+	paginatedRawGroups, err := s.repo.GetGroupedHistoryBatches(page, pageSize, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get grouped history batches from repo: %w", err)
 	}

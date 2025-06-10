@@ -42,6 +42,12 @@ func (lc *LoteController) CreateLote(c *gin.Context) {
 	var loteReq models.Lote
 	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	if err := c.ShouldBindJSON(&loteReq); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
@@ -54,7 +60,7 @@ func (lc *LoteController) CreateLote(c *gin.Context) {
         return
     }
 
-	createdLote, err := lc.service.CreateLote(productID, loteReq, operationBatchID)
+	createdLote, err := lc.service.CreateLote(productID, loteReq, userID.(int), operationBatchID)
 	if err != nil {
 		// Basic error type checking, can be more granular
 		if err.Error() == fmt.Sprintf("product with ID %s not found", productID) {
@@ -84,7 +90,14 @@ func (lc *LoteController) CreateLote(c *gin.Context) {
 // @Security BearerAuth
 func (lc *LoteController) GetLotesForProduct(c *gin.Context) {
 	productID := c.Param("product_id")
-	lotes, err := lc.service.GetLotesByProductID(productID)
+	
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	lotes, err := lc.service.GetLotesByProductID(productID, userID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve lotes: " + err.Error()})
 		return
@@ -115,6 +128,12 @@ func (lc *LoteController) UpdateLote(c *gin.Context) {
 	var loteReq models.Lote
 	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	if err := c.ShouldBindJSON(&loteReq); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
@@ -126,7 +145,7 @@ func (lc *LoteController) UpdateLote(c *gin.Context) {
         return
     }
 
-	updatedLote, err := lc.service.UpdateLote(loteID, loteReq, operationBatchID)
+	updatedLote, err := lc.service.UpdateLote(loteID, loteReq, userID.(int), operationBatchID)
 	if err != nil {
 		if err.Error() == fmt.Sprintf("lote with ID %s not found", loteID) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -159,7 +178,13 @@ func (lc *LoteController) DeleteLote(c *gin.Context) {
 	loteID := c.Param("lote_id")
 	operationBatchID := c.GetHeader("X-Operation-Batch-ID")
 
-	err := lc.service.DeleteLote(loteID, operationBatchID)
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	err := lc.service.DeleteLote(loteID, userID.(int), operationBatchID)
 	if err != nil {
 		if err.Error() == fmt.Sprintf("lote with ID %s not found", loteID) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})

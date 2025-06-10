@@ -19,6 +19,7 @@ type Product struct {
     Name     string  `json:"name"`
     Unit     string  `json:"unit"`
     Quantity float64 `json:"quantity"`
+    UserID   int     `json:"-" db:"user_id"` // Hidden from JSON response
     Lotes    []Lote  `json:"lotes,omitempty"` // Added: Lotes associated with the product
 }
 
@@ -26,6 +27,7 @@ type Product struct {
 type Lote struct {
     ID            string    `json:"id"`                       // UUID
     ProductID     string    `json:"product_id"`               // FK to Product.ID
+    UserID        int       `json:"-" db:"user_id"`           // Hidden from JSON response, FK to User.ID
     Quantity      float64   `json:"quantity" binding:"required,gt=0"`
     DataValidade  string    `json:"data_validade" binding:"required"` // YYYY-MM-DD
     CreatedAt     time.Time `json:"created_at"`
@@ -39,6 +41,7 @@ type History struct {
     Date       string          `json:"date" db:"date"` // Consider using time.Time and handling format in marshalling/unmarshalling
     EntityType string          `json:"entityType" db:"entity_type"`
     EntityID   string          `json:"entityId" db:"entity_id"`
+    UserID     int             `json:"-" db:"user_id"` // Hidden from JSON response, FK to User.ID
     Changes    json.RawMessage `json:"changes" db:"changes"` // Storing as raw JSON
     BatchID    string          `json:"batchId" db:"batch_id"` // New field for grouping history entries
     // New fields for context - these are populated by the service, not directly from history table
