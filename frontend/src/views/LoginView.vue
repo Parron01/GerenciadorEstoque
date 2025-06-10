@@ -106,6 +106,14 @@ function toggleShowPassword() {
           />
         </div>
 
+        <!-- Dica para o campo de usuário -->
+        <div class="mt-2 text-sm text-indigo-400">
+          <p>
+            Usuário <strong class="text-indigo-700">"teste"</strong> disponível
+            para explorar a aplicação.
+          </p>
+        </div>
+
         <!-- Campo de senha -->
         <div>
           <label
@@ -134,6 +142,14 @@ function toggleShowPassword() {
               </span>
             </button>
           </div>
+        </div>
+
+        <!-- Dica para o campo de senha -->
+        <div class="mt-2 text-sm text-indigo-400">
+          <p>
+            Senha <strong class="text-indigo-700">"teste"</strong> disponível
+            para explorar a aplicação.
+          </p>
         </div>
 
         <!-- Botão de login -->
