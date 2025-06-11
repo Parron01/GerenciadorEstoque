@@ -16,6 +16,7 @@ export const useHistoryStore = defineStore("history", {
     isLoadingGroupedHistory: false, // Renamed for clarity
     currentPageForGrouped: 1, // Renamed for clarity
     pageSizeForGrouped: 5, // Renamed for clarity
+    productFilter: "", // Add product filter state
   }),
   // getters can remain similar, just ensure they point to the renamed state properties if needed
   getters: {
@@ -96,6 +97,15 @@ export const useHistoryStore = defineStore("history", {
         // Re-throw the error so ProductTable.vue can handle it as part of allApiCallsSuccessful
         throw error;
       }
+    },
+
+    // New actions for product filtering
+    setProductFilter(productId: string) {
+      this.productFilter = productId;
+    },
+
+    clearProductFilter() {
+      this.productFilter = "";
     },
   },
 });

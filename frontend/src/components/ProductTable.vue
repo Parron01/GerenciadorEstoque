@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useProductStore } from "@/stores/productStore";
 import { useHistoryStore } from "@/stores/historyStore";
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import type { Product } from "@/models/product";
 import type { Lote, LotePayload } from "@/models/lote";
 import { v4 as uuidv4 } from "uuid";
@@ -21,6 +21,12 @@ const isEditMode = ref(false);
 const isAddProductMode = ref(false);
 const showDeleteDialog = ref(false);
 const productToDelete = ref<Product | null>(null);
+
+// Pagination and filtering state
+const currentPage = ref(1);
+const pageSize = ref(10);
+const nameFilter = ref("");
+const unitFilter = ref("");
 
 // Product states
 const newProduct = ref<Omit<Product, "id" | "lotes">>({
@@ -480,6 +486,63 @@ async function confirmDeleteLote() {
   loteToDelete.value = null;
 }
 
+const filteredProducts = computed(() => {
+  return productStore.products.filter((product) => {
+    const nameMatch = nameFilter.value
+      ? product.name.toLowerCase().includes(nameFilter.value.toLowerCase())
+      : true;
+
+    const unitMatch = unitFilter.value
+      ? product.unit === unitFilter.value
+      : true;
+
+    return nameMatch && unitMatch;
+  });
+});
+
+// Sort filtered products by name
+const sortedFilteredProducts = computed(() => {
+  return [...filteredProducts.value].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+});
+
+// Paginated products
+const paginatedProducts = computed(() => {
+  const startIndex = (currentPage.value - 1) * pageSize.value;
+  const endIndex = startIndex + pageSize.value;
+  return sortedFilteredProducts.value.slice(startIndex, endIndex);
+});
+
+// Total pages
+const totalPages = computed(() => {
+  return Math.ceil(filteredProducts.value.length / pageSize.value);
+});
+
+// Reset to first page when filters change
+function resetPage() {
+  currentPage.value = 1;
+}
+
+// Handle page change
+function changePage(newPage: number) {
+  if (newPage >= 1 && newPage <= totalPages.value) {
+    currentPage.value = newPage;
+  }
+}
+
+// Clear all filters
+function clearFilters() {
+  nameFilter.value = "";
+  unitFilter.value = "";
+  resetPage();
+}
+
+// Watch filters to reset page
+watch([nameFilter, unitFilter], () => {
+  resetPage();
+});
+
 const products = computed(() => productStore.products);
 const sortedProducts = computed(() => {
   return [...productStore.products].sort((a, b) =>
@@ -580,6 +643,82 @@ onMounted(() => {
       </div>
     </div>
 
+    <!-- Filter Controls -->
+    <div class="mb-4 bg-white p-4 rounded-lg shadow border border-gray-200">
+      <h3 class="text-lg font-medium text-gray-700 mb-3 flex items-center">
+        <span class="material-icons-outlined mr-2 text-indigo-600"
+          >filter_list</span
+        >
+        Filtrar Produtos
+      </h3>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Product Name Filter -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Nome do Produto</label
+          >
+          <div class="flex items-center space-x-2">
+            <!-- Search icon outside the input -->
+            <div
+              class="flex items-center justify-center w-10 h-10 bg-indigo-100 rounded-lg"
+            >
+              <span class="material-icons-outlined text-indigo-600 text-sm"
+                >search</span
+              >
+            </div>
+            <!-- Input field with clear button -->
+            <div class="relative flex-1">
+              <input
+                v-model="nameFilter"
+                type="text"
+                class="w-full input-field-enhanced pr-8"
+                placeholder="Buscar por nome..."
+              />
+              <button
+                v-if="nameFilter"
+                @click="nameFilter = ''"
+                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                <span class="material-icons-outlined text-sm">close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Unit Filter -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Unidade</label
+          >
+          <select v-model="unitFilter" class="w-full input-field-enhanced">
+            <option value="">Todas as unidades</option>
+            <option value="L">Litros (L)</option>
+            <option value="kg">Quilogramas (kg)</option>
+          </select>
+        </div>
+
+        <!-- Clear Filters Button -->
+        <div class="flex items-end">
+          <button
+            @click="clearFilters"
+            class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-sm shadow-sm hover:shadow flex items-center font-medium"
+            :disabled="!nameFilter && !unitFilter"
+            :class="{
+              'opacity-50 cursor-not-allowed': !nameFilter && !unitFilter,
+            }"
+          >
+            <span class="material-icons-outlined mr-1">clear</span>
+            Limpar Filtros
+          </button>
+        </div>
+      </div>
+
+      <!-- Filter Result Count -->
+      <div class="text-sm text-gray-600 mt-3" v-if="nameFilter || unitFilter">
+        {{ filteredProducts.length }} produto(s) encontrado(s)
+      </div>
+    </div>
+
     <!-- Products Table -->
     <div class="overflow-x-auto rounded-lg shadow-lg border border-gray-200">
       <table class="min-w-full bg-white">
@@ -599,7 +738,7 @@ onMounted(() => {
           </tr>
         </thead>
         <tbody>
-          <template v-for="product in sortedProducts" :key="product.id">
+          <template v-for="product in paginatedProducts" :key="product.id">
             <ProductRow
               :product="product"
               :is-edit-mode="isEditMode"
@@ -624,7 +763,7 @@ onMounted(() => {
             </tr>
           </template>
 
-          <tr v-if="products.length === 0">
+          <tr v-if="filteredProducts.length === 0">
             <td colspan="5" class="p-8 text-center">
               <div
                 class="flex flex-col items-center justify-center text-gray-500"
@@ -634,7 +773,21 @@ onMounted(() => {
                   >inventory_2</span
                 >
                 <p class="text-lg">Nenhum produto encontrado.</p>
-                <p class="text-sm text-gray-400">
+                <p
+                  class="text-sm text-gray-400"
+                  v-if="nameFilter || unitFilter"
+                >
+                  Tente ajustar os filtros de busca.
+                </p>
+                <button
+                  v-if="nameFilter || unitFilter"
+                  @click="clearFilters"
+                  class="mt-3 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition-colors flex items-center"
+                >
+                  <span class="material-icons-outlined mr-1">refresh</span>
+                  Limpar filtros
+                </button>
+                <p class="text-sm text-gray-400" v-else>
                   Adicione um novo produto para começar.
                 </p>
               </div>
@@ -642,6 +795,69 @@ onMounted(() => {
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Pagination -->
+    <div
+      v-if="filteredProducts.length > 0"
+      class="flex flex-col sm:flex-row justify-between items-center bg-white px-4 py-3 mt-4 border border-gray-200 rounded-lg shadow-sm"
+    >
+      <!-- Information about items displayed -->
+      <div class="text-sm text-gray-700 mb-2 sm:mb-0">
+        Mostrando
+        <span class="font-medium">{{ (currentPage - 1) * pageSize + 1 }}</span>
+        a
+        <span class="font-medium">{{
+          Math.min(currentPage * pageSize, filteredProducts.length)
+        }}</span>
+        de
+        <span class="font-medium">{{ filteredProducts.length }}</span>
+        produtos
+      </div>
+
+      <!-- Pagination controls -->
+      <div class="flex items-center space-x-1">
+        <!-- Previous page button -->
+        <button
+          @click="changePage(currentPage - 1)"
+          :disabled="currentPage === 1"
+          class="px-3 py-1.5 text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <span class="material-icons-outlined text-sm">chevron_left</span>
+        </button>
+
+        <!-- Page number buttons -->
+        <div class="hidden sm:flex space-x-1">
+          <button
+            v-for="page in Math.min(5, totalPages)"
+            :key="page"
+            @click="changePage(page)"
+            :class="{
+              'bg-indigo-600 text-white': page === currentPage,
+              'bg-white text-gray-700 hover:bg-gray-100': page !== currentPage,
+            }"
+            class="px-3 py-1 text-sm border border-gray-300 rounded-md"
+          >
+            {{ page }}
+          </button>
+        </div>
+
+        <!-- Mobile optimized current page indicator -->
+        <div
+          class="sm:hidden text-sm font-medium px-3 py-1.5 border border-gray-300 rounded-md text-gray-700"
+        >
+          Página {{ currentPage }} de {{ totalPages }}
+        </div>
+
+        <!-- Next page button -->
+        <button
+          @click="changePage(currentPage + 1)"
+          :disabled="currentPage === totalPages"
+          class="px-3 py-1.5 text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <span class="material-icons-outlined text-sm">chevron_right</span>
+        </button>
+      </div>
     </div>
 
     <!-- Modals -->

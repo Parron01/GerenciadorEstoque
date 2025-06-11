@@ -42,6 +42,47 @@ const isThisMonth = (dateString: string): boolean => {
   );
 };
 
+// New helper to check if batch contains records for filtered product
+const matchesProductFilter = (batch: HistoryBatchGroup): boolean => {
+  if (!historyStore.productFilter) return true;
+
+  // Check if any record in batch references the filtered product
+  if (batch.records && batch.records.length > 0) {
+    // Check product-specific records
+    const hasMatchingRecord = batch.records.some((record) => {
+      // Direct match for product records
+      if (
+        record.entityType === "product" &&
+        record.entityId === historyStore.productFilter
+      ) {
+        return true;
+      }
+
+      // Match for lote records that belong to the product
+      if (
+        record.entityType === "lote" &&
+        record.details?.productId === historyStore.productFilter
+      ) {
+        return true;
+      }
+
+      return false;
+    });
+
+    if (hasMatchingRecord) return true;
+  }
+
+  // Check product summaries (which contain all affected products)
+  if (
+    batch.productSummaries &&
+    historyStore.productFilter in batch.productSummaries
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 const filteredAndSortedBatches = computed((): HistoryBatchGroup[] => {
   if (!historyStore.groupedHistory || !historyStore.groupedHistory.groups)
     return [];
@@ -49,17 +90,29 @@ const filteredAndSortedBatches = computed((): HistoryBatchGroup[] => {
   return historyStore.groupedHistory.groups
     .filter((batch: HistoryBatchGroup) => {
       if (!batch.records || batch.records.length === 0) return false;
+
+      // Apply date filter
       const batchDate = batch.createdAt;
+      let matchesDateFilter = true;
       switch (props.filterOption) {
         case "today":
-          return isToday(batchDate);
+          matchesDateFilter = isToday(batchDate);
+          break;
         case "week":
-          return isThisWeek(batchDate);
+          matchesDateFilter = isThisWeek(batchDate);
+          break;
         case "month":
-          return isThisMonth(batchDate);
+          matchesDateFilter = isThisMonth(batchDate);
+          break;
         default:
-          return true;
+          matchesDateFilter = true;
       }
+
+      // Apply product filter
+      const productMatches = matchesProductFilter(batch);
+
+      // Both filters must match
+      return matchesDateFilter && productMatches;
     })
     .sort(
       (a, b) =>
@@ -106,6 +159,14 @@ function formatBatchDate(dateStr: string): string {
     </div>
 
     <div v-else-if="filteredAndSortedBatches.length > 0" class="space-y-6">
+      <!-- Add filter results count -->
+      <div
+        class="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded"
+        v-if="historyStore.productFilter || props.filterOption !== 'all'"
+      >
+        {{ filteredAndSortedBatches.length }} registro(s) encontrado(s)
+      </div>
+
       <div
         v-for="batch in filteredAndSortedBatches"
         :key="batch.batchId"
@@ -139,16 +200,38 @@ function formatBatchDate(dateStr: string): string {
           >history</span
         >
         <p class="text-lg">Nenhum registro de histórico encontrado.</p>
-        <p class="text-sm text-gray-400">
+        <p
+          class="text-sm text-gray-400"
+          v-if="historyStore.productFilter || props.filterOption !== 'all'"
+        >
+          Tente ajustar os filtros de busca.
+        </p>
+        <p class="text-sm text-gray-400" v-else>
           Os registros aparecerão aqui quando você fizer alterações no estoque.
         </p>
+
+        <!-- Clear filters button when no results found -->
+        <button
+          v-if="historyStore.productFilter || props.filterOption !== 'all'"
+          @click="
+            historyStore.clearProductFilter();
+            $emit('update:filterOption', 'all');
+          "
+          class="mt-3 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition-colors flex items-center"
+        >
+          <span class="material-icons-outlined mr-1">refresh</span>
+          Limpar filtros
+        </button>
       </div>
     </div>
 
+    <!-- Only show pagination when not filtering -->
     <HistoryPagination
       v-if="
         !historyStore.isLoadingGroupedHistory &&
-        (historyStore.groupedHistory?.totalBatches || 0) > 0
+        (historyStore.groupedHistory?.totalBatches || 0) > 0 &&
+        !historyStore.productFilter &&
+        props.filterOption === 'all'
       "
       :current-page="currentPage"
       :total-pages="totalPages"
