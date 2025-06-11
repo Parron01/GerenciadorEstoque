@@ -26,6 +26,7 @@ const navigateAndCloseMenu = () => {
   <!-- Wrapper de toda a aplicação -->
   <div
     class="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-indigo-50 text-gray-800"
+    translate="no"
   >
     <!-- Top Bar -->
     <header
@@ -34,6 +35,7 @@ const navigateAndCloseMenu = () => {
     >
       <h1
         class="text-xl font-bold tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-700"
+        translate="no"
       >
         📦 Estoque Simples
       </h1>

@@ -16,7 +16,6 @@ const emit = defineEmits<{
 
 function formatDate(dateString?: string) {
   if (!dateString) return "N/A";
-  // console.log("Formatting date:", dateString); // User's log, can be kept for debugging or removed
 
   // Check if the dateString is in YYYY-MM-DD format (likely from user input not yet saved to backend)
   if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -24,14 +23,14 @@ function formatDate(dateString?: string) {
     const year = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1; // JavaScript months are 0-indexed
     const day = parseInt(parts[2], 10);
-    // Create a new Date object using local timezone components
-    return new Date(year, month, day).toLocaleDateString();
+    // Create a new Date object using local timezone components and format in Portuguese
+    return new Date(year, month, day).toLocaleDateString("pt-BR");
   }
 
   // For other formats, especially full ISO strings like "YYYY-MM-DDTHH:mm:ssZ"
   try {
-    // Use toLocaleDateString with UTC timezone to display the date as it is in UTC
-    return new Date(dateString).toLocaleDateString(undefined, {
+    // Use Portuguese locale consistently
+    return new Date(dateString).toLocaleDateString("pt-BR", {
       timeZone: "UTC",
     });
   } catch (e) {

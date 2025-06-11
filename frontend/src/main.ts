@@ -34,6 +34,10 @@ const toastOptions: PluginOptions = {
 
 // Create app
 const app = createApp(App);
+
+// Set the app's language explicitly
+app.config.globalProperties.$locale = "pt-BR";
+
 app.use(createPinia());
 app.use(router);
 app.use(Toast, toastOptions);

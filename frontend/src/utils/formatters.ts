@@ -32,7 +32,7 @@ export function formatId(id: string, maxLength: number = 6): string {
  */
 export function formatDateTime(dateStr: string): string {
   try {
-    return new Date(dateStr).toLocaleString();
+    return new Date(dateStr).toLocaleString("pt-BR");
   } catch (e) {
     return dateStr || "-";
   }
@@ -51,12 +51,12 @@ export function formatDateOnly(dateStr: string): string {
     // Check if valid date
     if (isNaN(date.getTime())) return dateStr;
 
-    // Format to DD/MM/YYYY
-    const day = String(date.getDate()).padStart(2, "0");
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const year = date.getFullYear();
-
-    return `${day}/${month}/${year}`;
+    // Format to DD/MM/YYYY using Portuguese locale
+    return date.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
   } catch (e) {
     return dateStr || "-";
   }

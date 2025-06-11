@@ -47,8 +47,8 @@ export const useAuthStore = defineStore("auth", () => {
       localStorage.setItem("auth_token", data.token);
       localStorage.setItem("auth_user", data.user.username);
 
-      // Toast de sucesso
-      toast.success(`Bem-vindo, ${data.user.username}!`);
+      // Toast de sucesso em português
+      toast.success(`Bem-vindo(a), ${data.user.username}!`);
 
       // Redirecionar para página inicial
       router.push("/");
